@@ -77,8 +77,6 @@ class V4L2Capture {
 		std::string device_name_;	/**< @brief /dev/Video[0-9]のキャラクタデバイス名 */
 
 		int device_fd_;				/**< @brief /dev/Video[0-9]のキャラクタデバイスファイルディスクリプタ */
-
-		Frame frame_;				/**< @brief 画像データへのポインタ 画像サイズなどのフレーム情報 */
 };
 
 #endif
