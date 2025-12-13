@@ -1,8 +1,8 @@
 /**
- *  @file	logger.hpp
- *  @brief	ログAPI
- *  @author	sawada souta
- *  @date	2025/12/13
+ * @file	logger.hpp
+ * @brief	ログAPI
+ * @author	sawada souta
+ * @date	2025/12/13
  */
 
 #ifndef LOGGER_HPP_
@@ -12,9 +12,9 @@
 #include <unistd.h>
 
 /**
- *  @brief	最初の呼び出し時のみgetpid()を実行
- *  @return	pid 
- *  @note	fork()を使う際は再呼び出し必須
+ * @brief	最初の呼び出し時のみgetpid()を実行
+ * @return	pid 
+ * @note	fork()を使う際は再呼び出し必須
  */
 static inline pid_t log_getpid(void);
 
