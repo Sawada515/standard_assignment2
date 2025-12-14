@@ -30,7 +30,7 @@ public:
      * @param[in]   height 取得する画像データの縦幅
      * @param[in]   device /dev/video[0-9]のデバイスパス
      */
-    CameraCaptureThread(uint32_t width, uint32_t height, std::string& device);
+    CameraCaptureThread(uint32_t width, uint32_t height, const std::string& device);
 
     /**
      * @brief       デコンストラクタ

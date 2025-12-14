@@ -10,10 +10,10 @@
 #include <chrono>
 #include <string>
 
-#include "camera_capture_thread/camera_capture_thread.hpp"
+#include "camera/camera_capture_thread.hpp"
 #include "logger/logger.hpp"
 
-CameraCaptureThread::CameraCaptureThread(uint32_t width, uint32_t height, std::string& device)
+CameraCaptureThread::CameraCaptureThread(uint32_t width, uint32_t height, const std::string& device)
     : capture_thread_(),
       mutex_(),
       cond_var_(),

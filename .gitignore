@@ -39,3 +39,11 @@
 
 # debug information files
 *.dwo
+
+#dir
+ojb/
+bin/
+build/
+todo.txt
+
+src/main.c

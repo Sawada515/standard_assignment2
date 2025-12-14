@@ -37,15 +37,19 @@ static inline pid_t log_getpid(void);
 #define LOG_D		((void)0)
 #endif
 
+/**
+ * @brief ログ用にプロセスIDを取得
+ * @return pid_t 
+ */
 static inline pid_t log_getpid(void)
 {
-	static pid_t pid = -1;
+    static pid_t pid = -1;
 
-	if(pid == -1) {
-		pid = getpid();
-	}
+    if (pid == -1) {
+        pid = getpid();
+    }
 
-	return pid;
+    return pid;
 }
 
 #endif
