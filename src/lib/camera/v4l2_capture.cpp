@@ -28,6 +28,7 @@ V4L2Capture::V4L2Capture(uint32_t width, uint32_t height)
 {
     width_ = width;
     height_ = height;
+
     LOG_I("V4L2Capture constructor called");
 }
 
@@ -35,6 +36,7 @@ V4L2Capture::~V4L2Capture()
 {
     stop_stream();
     close_device();
+
     LOG_I("V4L2Capture destructor called");
 }
 
@@ -46,10 +48,12 @@ bool V4L2Capture::open_device(const std::string& device)
 
     if (device_fd_ < 0) {
         LOG_E("Failed to open device %s: %s", device_name_.c_str(), std::strerror(errno));
+
         return false;
     }
 
     LOG_I("Device %s opened successfully", device_name_.c_str());
+
     return true;
 }
 
@@ -57,6 +61,7 @@ bool V4L2Capture::start_stream()
 {
     if (device_fd_ < 0) {
         LOG_E("Device not opened");
+
         return false;
     }
     
@@ -71,6 +76,7 @@ bool V4L2Capture::start_stream()
 
     if (ioctl(device_fd_, VIDIOC_S_FMT, &fmt) < 0) {
         LOG_E("Failed to set format: %s", std::strerror(errno));
+
         return false;
     }
 
@@ -91,6 +97,7 @@ bool V4L2Capture::start_stream()
 
     if (ioctl(device_fd_, VIDIOC_REQBUFS, &req) < 0) {
         LOG_E("Failed to request buffers: %s", std::strerror(errno));
+
         return false;
     }
 
@@ -106,6 +113,7 @@ bool V4L2Capture::start_stream()
 
         if (ioctl(device_fd_, VIDIOC_QUERYBUF, &buf) < 0) {
             LOG_E("Failed to query buffer %zu: %s", i, std::strerror(errno));
+
             return false;
         }
 
@@ -114,11 +122,13 @@ bool V4L2Capture::start_stream()
 
         if (buffers_[i].start == MAP_FAILED) {
             LOG_E("Failed to mmap buffer %zu: %s", i, std::strerror(errno));
+
             return false;
         }
 
         if (ioctl(device_fd_, VIDIOC_QBUF, &buf) < 0) {
             LOG_E("Failed to queue buffer %zu: %s", i, std::strerror(errno));
+
             return false;
         }
     }
@@ -126,6 +136,7 @@ bool V4L2Capture::start_stream()
     int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(device_fd_, VIDIOC_STREAMON, &type) < 0) {
         LOG_E("Failed to start streaming: %s", std::strerror(errno));
+
         return false;
     }
 
@@ -136,6 +147,7 @@ bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
 {
     if (device_fd_ < 0) {
         LOG_E("Device not opened");
+
         return false;
     }
 
@@ -152,6 +164,7 @@ bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
             return false; 
         } else {
             LOG_E("Failed to dequeue buffer: %s", std::strerror(errno));
+
             return false;
         }
     }
@@ -171,6 +184,7 @@ bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
     // 注意: これを実行した瞬間に frame.data の中身は保証されなくなります！
     if (ioctl(device_fd_, VIDIOC_QBUF, &buf) < 0) {
         LOG_E("Failed to re-queue buffer: %s", std::strerror(errno));
+        
         return false;
     }
 
@@ -203,6 +217,7 @@ void V4L2Capture::close_device()
         ::close(device_fd_);
         device_fd_ = -1;
         device_name_.clear();
+
         LOG_I("Device closed successfully");
     }
 }
