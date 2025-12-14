@@ -26,6 +26,14 @@ $ mkdir build && cd $_
 $ cmake ..
 $ make
 ```
+cmakeの際の指定オプション<br><br>
+```terminal
+cmake -DCMAKE_BUILD_TYPE=type ..
+```
+| type | コンパイルオプション |
+| --- | --- |
+| Release | -O3 -DNDEBUG |
+| Debug | -g |
 
 ## 実行
 ```terminal
