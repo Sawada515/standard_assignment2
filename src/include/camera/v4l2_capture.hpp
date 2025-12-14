@@ -21,16 +21,19 @@ class V4L2Capture {
 		/**
 		 * @brief	画像データへのポインタ 画像サイズなどのフレーム情報
 		 */
-		typedef struct frame {
+		struct Frame {
 			void *data;			/**< @brief mmapの戻り値用 */
 			uint32_t width;		/**< @brief 画像データの横幅 */
 			uint32_t height;	/**< @brief 画像データの縦幅 */
-		} Frame;
+			size_t length;		/**< @brief 画像データのサイズ */
+		};
 
 		/**
-		 * @brief	V4L2Captureコンストラクタ
+		 * @brief		V4L2Captureコンストラクタ
+		 * @param[in]	width 取得する画像データの横幅
+		 * @param[in]	height 取得する画像データの縦幅
 		 */
-		V4L2Capture(void);
+		V4L2Capture(uint32_t width, uint32_t height);
 
 		/**
 		 * @brief	V4L2Captureデコンストラクタ
@@ -61,7 +64,7 @@ class V4L2Capture {
 		 * @return		false エラーあり
 		 * @note		エラーの場合はログを参照
 		 */
-		bool read_frame(Frame& frame);
+		bool read_frame(V4L2Capture::Frame& frame);
 
 		/**
 		 * @brief	キャプチャ停止
@@ -74,9 +77,22 @@ class V4L2Capture {
 		void close_device(void);
 
 	private:
+		/**
+		 * @brief	mmapしたバッファ情報
+		 */
+		struct Buffer {
+			void *start;
+			size_t length;
+		};
+
 		std::string device_name_;	/**< @brief /dev/Video[0-9]のキャラクタデバイス名 */
 
 		int device_fd_;				/**< @brief /dev/Video[0-9]のキャラクタデバイスファイルディスクリプタ */
+
+		std::vector<Buffer> buffers_;	/**< @brief mmapしたバッファ情報 */
+
+		uint32_t width_;			/**< @brief 取得する画像データの横幅 */
+		uint32_t height_;			/**< @brief 取得する画像データの縦幅 */
 };
 
 #endif
