@@ -24,6 +24,8 @@ set(SOURCES
 
 add_executable(webcam_app ${SOURCES})
 
+taeget_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic)
+
 target_link_libraries(
     webcam_app PRIVATE
     ${OpenCV_LIBS}
