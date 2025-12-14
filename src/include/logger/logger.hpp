@@ -29,7 +29,7 @@ static inline pid_t log_getpid(void);
 #define LOG_I(fmt, ...)	dprintf(STDERR_FILENO, "[INFO] [%d] " fmt "\n", log_getpid(), ##__VA_ARGS__)
 
 /** @brief DEBUGマクロが有効なときだけLOG_Dマクロを有効にする */
-#ifdef DEBUG
+#if defined(DEBUG)
 /** @brief log level debug */
 #define LOG_D(fmt, ...)	dprintf(STDERR_FILENO, "[DEBUG] [%d] " fmt "\n", log_getpid(), ##__VA_ARGS__)
 #else

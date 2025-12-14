@@ -32,42 +32,94 @@ void ImageProcessor::setContrast(double alpha, double beta)
 // GUI用（標準）処理パイプライン
 bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcessedData& output_data)
 {
+    // 1. 基本的なnullチェック
     if (frame.data == nullptr || frame.length == 0) {
         LOG_E("Invalid input frame data");
 
         return false;
     }
 
-    // 1. V4L2の生データ(MJPEG等)をOpenCVのMat(BGR)にデコード
-    // データポインタから1次元のMatを作成 (コピーせず参照のみ)
-    cv::Mat raw_wrapper(1, frame.length, CV_8UC1, frame.data);
-    
-    // 画像としてデコード
-    cv::Mat img = cv::imdecode(raw_wrapper, cv::IMREAD_COLOR);
+    cv::Mat img;
+    uint8_t* data_ptr = static_cast<uint8_t*>(frame.data);
+
+    // MJPEG判定
+    bool is_mjpeg = (frame.length > 2 && data_ptr[0] == 0xFF && data_ptr[1] == 0xD8);
+
+    if (is_mjpeg) {
+        // --- MJPEG ---
+        cv::Mat raw_wrapper(1, frame.length, CV_8UC1, frame.data);
+        try {
+            img = cv::imdecode(raw_wrapper, cv::IMREAD_COLOR);
+        } catch (const cv::Exception& ex) {
+            LOG_E("MJPEG decode failed: %s", ex.what());
+
+            return false;
+        }
+    } else {
+        // --- YUYV (Raw) ---
+        
+        // 幅と高さが0の場合はデフォルト値を入れる
+        int w = (frame.width > 0) ? frame.width : 640;
+        int h = (frame.height > 0) ? frame.height : 480;
+
+        // 【ここが重要！】
+        // バッファサイズが足りているか確認する
+        // YUYVは 1ピクセル2バイトなので、必要なサイズは w * h * 2
+        size_t expected_size = static_cast<size_t>(w * h * 2);
+        
+        if (frame.length < expected_size) {
+            // サイズが足りない場合、無理に変換しようとするとSegfaultになるので中止する
+            LOG_E("Buffer too small for YUYV %dx%d! Expected: %zu, Got: %zu", 
+                  w, h, expected_size, frame.length);
+            return false;
+        }
+
+        try {
+            // CV_8UC2 (2チャンネル) として読み込む
+            cv::Mat yuyv_mat(h, w, CV_8UC2, frame.data);
+            cv::cvtColor(yuyv_mat, img, cv::COLOR_YUV2BGR_YUYV);
+        } catch (const cv::Exception& ex) {
+            LOG_E("YUYV conversion failed: %s", ex.what());
+            return false;
+        }
+    }
 
     if (img.empty()) {
-        LOG_E("Failed to decode image from V4L2 frame");
-
+        LOG_E("Decoded image is empty");
         return false;
     }
 
-    // 2. ノイズ除去 (ガウシアンフィルタ)
-    // カーネルサイズ(5,5), 標準偏差0(自動計算)
-    cv::GaussianBlur(img, img, cv::Size(5, 5), 0);
+    // 例外処理を追加して保護する
+    try {
+        // 2. ノイズ除去
+        //cv::GaussianBlur(img, img, cv::Size(5, 5), 0);
 
-    // 3. コントラスト・明度補正
-    // 計算式: New = alpha * Old + beta
-    // alpha 1.0 = そのまま, >1.0 = コントラスト強調
-    // beta  0 = そのまま, >0 = 明るく
-    img.convertTo(img, -1, contrast_alpha_, brightness_beta_);
+        // 3. コントラスト補正
+        img.convertTo(img, -1, contrast_alpha_, brightness_beta_);
+        
+        // 生データを保存
+        //output_data.raw_mat = img.clone();
+        output_data.raw_mat = cv::Mat();
 
-    // 4. 結果の格納 (解析用として生データを保持)
-    output_data.raw_mat = img;
+        cv::Mat send_img;
 
-    // 5. 送信用にJPEGエンコード (GUI表示用)
-    // GUI側できれいな画像を見るため、ここでの画質は標準的(80)に設定
-    if (!encode_image_to_jpeg(img, output_data.send_encoded_image, 80)) {
-        LOG_E("Failed to encode standard image");
+        if (img.cols > 640) {
+            double scale = 640.0 / img.cols;
+
+            cv::resize(img, send_img, cv::Size(), scale, scale);
+        }
+        else {
+            send_img = img;
+        }
+
+        // 4. 送信用JPEGエンコード
+        if (!encode_image_to_jpeg(img, output_data.send_encoded_image, 80)) {
+            LOG_E("Failed to encode standard image");
+
+            return false;
+        }
+    } catch (const cv::Exception& ex) {
+        LOG_E("Image processing exception: %s", ex.what());
 
         return false;
     }

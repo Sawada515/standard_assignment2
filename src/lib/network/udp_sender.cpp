@@ -63,7 +63,7 @@ bool UDPSender::send(const void* data, size_t size)
                                 (struct sockaddr*)&addr_, sizeof(addr_));
 
     if (sent_bytes < 0) {
-        LOG_E("UDP send failed: %s", std::strerror(errno));
+        LOG_E("UDP send failed: %lu[byte] %s", size, std::strerror(errno));
         
         return false;
     } else if (static_cast<size_t>(sent_bytes) != size) {

@@ -46,6 +46,3 @@ bin/
 build/
 docs/
 todo.txt
-
-# Ignore source files
-src/main.c

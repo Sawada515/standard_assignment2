@@ -50,6 +50,13 @@ public:
      */
     void enqueue(const V4L2Capture::Frame& frame);
 
+    /**
+     * @brief       送信キューに画像データを追加する
+     * @param[in]   data 送信する画像データのバイト列
+     * @note        内部でデータのディープコピーを行います
+     */
+    void enqueue_vector(const std::vector<uint8_t>& data);
+
 private:
     /**
      * @brief 送信ループ（スレッド関数）

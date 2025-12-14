@@ -76,6 +76,7 @@ void UDPSenderThread::enqueue(const V4L2Capture::Frame& frame)
     copied_frame.data = new uint8_t[frame.length];
     if (!copied_frame.data) {
         LOG_E("Failed to allocate memory for UDP send queue");
+
         return;
     }
     
@@ -91,6 +92,7 @@ void UDPSenderThread::enqueue(const V4L2Capture::Frame& frame)
             V4L2Capture::Frame old_frame = send_queue_.front();
             send_queue_.pop();
             delete[] static_cast<uint8_t*>(old_frame.data); // 古いデータを捨てる
+
             LOG_W("UDP send queue full, dropped old frame");
         }
 
@@ -98,6 +100,39 @@ void UDPSenderThread::enqueue(const V4L2Capture::Frame& frame)
     }
 
     cond_var_.notify_one();
+}
+
+void UDPSenderThread::enqueue_vector(const std::vector<uint8_t>& vec_data)
+{
+    if (!running_) return;
+
+    V4L2Capture::Frame frame;
+    frame.width = 0;
+    frame.height = 0;
+    frame.length = vec_data.size();
+    
+    // 送信スレッド側で delete[] するために new で確保
+    frame.data = new uint8_t[frame.length];
+    
+    if (frame.data) {
+        std::memcpy(frame.data, vec_data.data(), frame.length);
+        
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (send_queue_.size() > 10) {
+                V4L2Capture::Frame old = send_queue_.front();
+                send_queue_.pop();
+                if (old.data) {
+                    delete[] static_cast<uint8_t*>(old.data);
+                }
+            }
+            send_queue_.push(frame);
+        }
+        cond_var_.notify_one();
+    }
+    else {
+        LOG_E("Failed to allocate memory in enqueue_vector");
+    }
 }
 
 void UDPSenderThread::sendLoop(void)
