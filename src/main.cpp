@@ -25,9 +25,7 @@ int main() {
     // カメラ設定: /dev/video0, 640x480
     CameraCaptureThread cam_thread(800, 600, "/dev/video2");
     
-    // 【ここを変更しました】
-    // 送信先IP: 192.168.10.200, ポート: 50000
-    UDPSenderThread sender_thread("192.168.10.200", 50000); 
+    UDPSenderThread sender_thread("192.168.76.209", 50000); 
 
     // 画像処理クラス
     ImageProcessor processor;
@@ -37,7 +35,7 @@ int main() {
     sender_thread.start();
     cam_thread.start();
 
-    LOG_I("Streaming Started to 192.168.10.200:50000");
+    LOG_I("Streaming Started to 192.168.76.209:50000");
 
     // 3. メインループ
     while (g_signal_status == 0) {
