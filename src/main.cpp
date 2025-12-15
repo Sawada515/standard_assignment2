@@ -5,10 +5,10 @@
 
 #include "camera/camera_capture_thread.hpp"
 #include "network/udp_sender_thread.hpp"
-#include "image_processor/image_processor.hpp" // ディレクトリ名修正済み
+#include "image_processor/image_processor.hpp" 
 #include "logger/logger.hpp"
+#include "read_config/read_yaml.hpp"
 
-// Ctrl+C で終了するためのフラグ
 volatile std::sig_atomic_t g_signal_status = 0;
 
 void signal_handler(int signal) {
@@ -16,65 +16,85 @@ void signal_handler(int signal) {
 }
 
 int main() {
-    // シグナルハンドラの設定
+    ReadYaml config_reader;
+
+    if (!config_reader.load_config("../config/config.yaml")) {
+        LOG_E("Failed to load configuration file.");
+
+        return -1;
+    }
+
+    AppConfigData config_data;
+    config_data = config_reader.get_config_data();
+
     std::signal(SIGINT, signal_handler);
     LOG_I("System Starting...");
 
-    // 1. 各モジュールの初期化
-
-    // カメラ設定: /dev/video0, 640x480
-    CameraCaptureThread cam_thread(800, 600, "/dev/video2");
+    CameraCaptureThread cam_top_view( \
+        config_data.camera.width, \
+        config_data.camera.height, \
+        config_data.camera.top_view_device);
+    CameraCaptureThread cam_bottom_view( \
+        config_data.camera.width, \
+        config_data.camera.height, \
+        config_data.camera.bottom_view_device);
     
-    UDPSenderThread sender_thread("192.168.76.209", 50000); 
+    UDPSenderThread top_view_sender(
+        config_data.network.dest_ip, \
+        config_data.network.top_view_port); 
+    UDPSenderThread bottom_view_sender(
+        config_data.network.dest_ip, \
+        config_data.network.bottom_view_port);
 
-    // 画像処理クラス
-    ImageProcessor processor;
-    processor.setContrast(1.0, 0.0); // コントラスト設定(必要に応じて変更)
+    ImageProcessor processor(config_data.image_processor.jpeg_quality, \
+        config_data.image_processor.resize_width);
 
-    // 2. スレッド開始
-    sender_thread.start();
-    cam_thread.start();
+    top_view_sender.start();
+    cam_top_view.start();
 
-    LOG_I("Streaming Started to 192.168.76.209:50000");
+    LOG_I("Streaming Started to %s:%d", \
+        config_data.network.dest_ip.c_str(), \
+        config_data.network.top_view_port);
+    LOG_I("Streaming Started to %s:%d", \
+        config_data.network.dest_ip.c_str(), \
+        config_data.network.bottom_view_port);
 
-    // 3. メインループ
     while (g_signal_status == 0) {
-        V4L2Capture::Frame frame;
+        V4L2Capture::Frame top_view_frame;
+        V4L2Capture::Frame bottom_view_frame;
 
-        // カメラからフレーム取得
-        if (cam_thread.getframe(frame)) {
+        if (cam_top_view.getframe(top_view_frame)) {
             
-            // --- 画像処理 & 圧縮 ---
             ImageProcessor::StdProcessedData processed;
             
-            // GUI送信用に処理 (ノイズ除去 -> コントラスト -> JPEG圧縮)
-            if (processor.process_for_gui(frame, processed)) {
+            if (processor.process_for_gui(top_view_frame, processed)) {
                 
-                // --- 送信 ---
-                // 圧縮されたJPEGデータを送信キューに入れる
                 if (!processed.send_encoded_image.empty()) {
-                    sender_thread.enqueue_vector(processed.send_encoded_image);
+                    top_view_sender.enqueue_vector(processed.send_encoded_image);
                 }
             }
             
-            // --- (必要なら) AI解析処理などをここに記述 ---
-            // ImageProcessor::AnalysisProcessedData analysis_data;
-            // processor.process_for_ai(processed.raw_mat, analysis_data);
-
-            // メモリ解放 (カメラから貰った生データはもう不要)
-            if (frame.data) {
-                delete[] static_cast<uint8_t*>(frame.data);
+            if (top_view_frame.data) {
+                delete[] static_cast<uint8_t*>(top_view_frame.data);
             }
 
+        }
+        if (cam_bottom_view.getframe(bottom_view_frame)) {
+            ImageProcessor::StdProcessedData processed;
+
+            if (processor.process_for_gui(bottom_view_frame, processed)) {
+
+                if (!processed.send_encoded_image.empty()) {
+                    bottom_view_sender.enqueue_vector(processed.send_encoded_image);
+                }
+            }
         } else {
-            // フレームが来ていないときは少し休む (CPU負荷低減)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 
-    // 終了処理
-    cam_thread.stop();
-    sender_thread.stop();
+    cam_top_view.stop();
+    top_view_sender.stop();
     LOG_I("System Stopped.");
 
     return 0;

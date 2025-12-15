@@ -27,7 +27,14 @@ public:
         cv::Mat std_processed_mat;
     };
 
-    ImageProcessor();
+    /**
+     * @brief       コンストラクタ
+     * @param[in]   quality JPEGエンコード品質 (1~100)
+     * @param[in]   resize_width リサイズ後の幅 (ピクセル)
+     * @note        qualityが不正値の場合、デフォルト80を使用
+     * @note        resize_widthが不正値の場合、デフォルト640.0を使用
+     */
+    ImageProcessor(uint8_t quality, double resize_width);
     ~ImageProcessor();
 
     /**
@@ -71,8 +78,12 @@ public:
     void setContrast(double alpha, double beta); // alpha:コントラスト(1.0~3.0), beta:明るさ(0~100)
 
 private:
+    uint8_t quality_;
+
     double contrast_alpha_;
     double brightness_beta_;
+
+    double resize_width_;
 };
 
 #endif

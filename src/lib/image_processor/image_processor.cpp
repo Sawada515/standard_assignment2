@@ -11,10 +11,14 @@
 #include "logger/logger.hpp"
 
 // コンストラクタ
-ImageProcessor::ImageProcessor()
-    : contrast_alpha_(1.0),
-      brightness_beta_(0.0)
+ImageProcessor::ImageProcessor(uint8_t quality, double resize_width)
+    : quality_(quality),
+      contrast_alpha_(1.0),
+      brightness_beta_(0.0),
+      resize_width_(resize_width)
 {
+    quality_ = (quality <= 0 || quality > 100) ? 80 : quality;
+    resize_width_ = (resize_width_ <= 0.0) ? 640.0 : resize_width_;
 }
 
 // デストラクタ
@@ -103,8 +107,8 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
 
         cv::Mat send_img;
 
-        if (img.cols > 640) {
-            double scale = 640.0 / img.cols;
+        if (img.cols > resize_width_) {
+            double scale = resize_width_ / img.cols;
 
             cv::resize(img, send_img, cv::Size(), scale, scale);
         }
@@ -161,7 +165,8 @@ bool ImageProcessor::process_for_ai(const cv::Mat& src_img, AnalysisProcessedDat
 
     // AI解析結果の可視化画像をJPEGエンコードして送信データにする
     // 通信帯域節約のため、解析結果確認用なら画質を少し落としても良い(例: 70)
-    if (!encode_image_to_jpeg(output_data.std_processed_mat, output_data.send_encoder_image, 70)) {
+    if (!encode_image_to_jpeg(output_data.std_processed_mat, output_data.send_encoder_image, quality_
+    )) {
         LOG_E("Failed to encode analysis image");
 
         return false;

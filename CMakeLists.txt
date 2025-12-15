@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Threads REQUIRED)
 find_package(OpenCV REQUIRED)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
+
 include_directories(${CMAKE_SOURCE_DIR}/src/include)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -19,6 +22,7 @@ set(SOURCES
     src/lib/image_processor/image_processor.cpp
     src/lib/network/udp_sender.cpp
     src/lib/network/udp_sender_thread.cpp
+    src/lib/read_config/read_yaml.cpp
     src/main.cpp
 )
 
@@ -31,4 +35,5 @@ target_link_libraries(
     webcam_app PRIVATE
     ${OpenCV_LIBS}
     Threads::Threads
+    ${YAML_CPP_LIBRARIES}
 )
