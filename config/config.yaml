@@ -1,5 +1,5 @@
 network:
-  dest_ip: "192.168.76.209"
+  dest_ip: "192.168.10.200"
   top_view_port : 50000
   bottom_view_port : 50001
 
@@ -10,5 +10,5 @@ camera:
   height: 600
 
 image_processor:
-  jpeg_quality: 90
-  resize_width: 640
+  jpeg_quality: 70
+  resize_width: 480

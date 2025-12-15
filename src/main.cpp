@@ -52,6 +52,9 @@ int main() {
     top_view_sender.start();
     cam_top_view.start();
 
+    bottom_view_sender.start();
+    cam_bottom_view.start();
+
     LOG_I("Streaming Started to %s:%d", \
         config_data.network.dest_ip.c_str(), \
         config_data.network.top_view_port);
@@ -88,6 +91,10 @@ int main() {
                     bottom_view_sender.enqueue_vector(processed.send_encoded_image);
                 }
             }
+
+            if (bottom_view_frame.data) {
+                delete[] static_cast<uint8_t*>(bottom_view_frame.data);
+            }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -95,6 +102,10 @@ int main() {
 
     cam_top_view.stop();
     top_view_sender.stop();
+
+    cam_bottom_view.stop();
+    bottom_view_sender.stop();
+
     LOG_I("System Stopped.");
 
     return 0;

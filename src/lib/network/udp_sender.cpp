@@ -11,6 +11,11 @@
 #include <cstring>
 #include <cerrno>
 
+#include <sys/uio.h>
+#include <algorithm>
+#include <thread>
+#include <chrono>
+
 #include "network/udp_sender.hpp"
 #include "logger/logger.hpp"
 
@@ -55,21 +60,50 @@ bool UDPSender::send(const void* data, size_t size)
 {
     if (!is_valid_ || sock_fd_ < 0) {
         LOG_E("Socket is not valid");
-
         return false;
     }
 
-    ssize_t sent_bytes = sendto(sock_fd_, data, size, 0,
-                                (struct sockaddr*)&addr_, sizeof(addr_));
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+    size_t offset = 0;
 
-    if (sent_bytes < 0) {
-        LOG_E("UDP send failed: %lu[byte] %s", size, std::strerror(errno));
+    const size_t MAX_CHUNK_SIZE = 60000;
+
+    while (offset < size) {
+        // 今回送るデータサイズ
+        size_t chunk_size = std::min(MAX_CHUNK_SIZE, size - offset);
         
-        return false;
-    } else if (static_cast<size_t>(sent_bytes) != size) {
-        LOG_W("Incomplete UDP send: %zd / %zu bytes", sent_bytes, size);
+        // 終了フラグ (0: 続きあり, 1: これで最後)
+        uint8_t flag = (offset + chunk_size == size) ? 1 : 0;
 
-        return false;
+        // --- ここが Zero-copy の肝 (iovec) ---
+        struct iovec iov[2];
+        
+        // 1つ目のデータ: ヘッダー (1byte)
+        iov[0].iov_base = &flag;
+        iov[0].iov_len = 1;
+
+        // 2つ目のデータ: 画像データのポインタ (コピーせず参照するだけ)
+        iov[1].iov_base = const_cast<uint8_t*>(ptr + offset);
+        iov[1].iov_len = chunk_size;
+
+        // メッセージヘッダの作成
+        struct msghdr msg;
+        std::memset(&msg, 0, sizeof(msg));
+        msg.msg_name = &addr_;             // 送信先アドレス
+        msg.msg_namelen = sizeof(addr_);
+        msg.msg_iov = iov;                 // データの配列
+        msg.msg_iovlen = 2;                // 配列の長さ (ヘッダー + 本体)
+
+        // 送信実行 (カーネル内で結合される)
+        ssize_t sent_bytes = sendmsg(sock_fd_, &msg, 0);
+
+        if (sent_bytes < 0) {
+            LOG_E("UDP sendmsg failed: %s", std::strerror(errno));
+
+            return false;
+        }
+
+        offset += chunk_size;
     }
 
     return true;
