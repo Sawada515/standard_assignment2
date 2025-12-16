@@ -1,8 +1,9 @@
 /**
  * @file    udp_sender_thread.hpp
- * @brief   画像データ送信専用のスレッドクラス
+ * @brief   バイト列データを非同期でUDP送信するスレッドクラス
  * @author  sawada souta
- * @date    2025-12-14
+ * @version 0.2
+ * @date    2025-12-16
  */
 
 #ifndef UDP_SENDER_THREAD_HPP_
@@ -16,11 +17,10 @@
 #include <vector>
 #include <cstdint>
 
-#include "camera/v4l2_capture.hpp"
 #include "network/udp_sender.hpp"
 
 /**
- * @brief 画像データを非同期（別スレッド）でUDP送信するクラス
+ * @brief 完成済みデータを非同期（別スレッド）でUDP送信するクラス
  */
 class UDPSenderThread {
 public:
@@ -44,11 +44,11 @@ public:
     void stop(void);
 
     /**
-     * @brief 送信キューに画像データを追加する
-     * @param[in] frame 送信する画像フレーム
+     * @brief 送信キューにデータを追加する
+     * @param[in] data 送信するバイト列（所有権は内部へムーブ）
      */
-    void enqueue(V4L2Capture::Frame&& frame);
-   
+    void enqueue(std::vector<uint8_t>&& data);
+
 private:
     /**
      * @brief 送信ループ（スレッド関数）
@@ -60,8 +60,8 @@ private:
     std::thread send_thread_;
     std::mutex mutex_;
     std::condition_variable cond_var_;
-    
-    std::queue<V4L2Capture::Frame> send_queue_;
+
+    std::queue<std::vector<uint8_t>> send_queue_;
 
     bool running_;
 };

@@ -19,8 +19,8 @@ class UDPSender {
 public:
     /**
      * @brief コンストラクタ（ソケットの作成とアドレス設定）
-     * @param[in] ip   送信先IPアドレス (例: "192.168.1.10")
-     * @param[in] port 送信先ポート番号 (例: 5000)
+     * @param[in] ip   送信先IPアドレス
+     * @param[in] port 送信先ポート番号 
      */
     UDPSender(const std::string& ip, uint16_t port);
 

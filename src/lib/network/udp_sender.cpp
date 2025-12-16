@@ -66,7 +66,7 @@ bool UDPSender::send(const void* data, size_t size)
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
     size_t offset = 0;
 
-    const size_t MAX_CHUNK_SIZE = 60000;
+    const size_t MAX_CHUNK_SIZE = 1400;
 
     while (offset < size) {
         // 今回送るデータサイズ

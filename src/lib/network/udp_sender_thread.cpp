@@ -1,15 +1,15 @@
 /**
  * @file    udp_sender_thread.cpp
- * @brief   画像データ送信専用のスレッドクラス実装
+ * @brief   バイト列データを非同期でUDP送信するスレッドクラス実装
  * @author  sawada souta
- * @date    2025-12-14
+ * @version 0.2
+ * @date    2025-12-16
  */
 
-#include <cstring>
-
 #include "network/udp_sender_thread.hpp"
-#include "camera/v4l2_capture.hpp"
 #include "logger/logger.hpp"
+
+#define MAX_QUEUE_SiZE 10  /**< 送信キューの最大サイズ */
 
 UDPSenderThread::UDPSenderThread(const std::string& ip, uint16_t port)
     : sender_(ip, port),
@@ -35,7 +35,7 @@ void UDPSenderThread::start(void)
 
     running_ = true;
     send_thread_ = std::thread(&UDPSenderThread::send_loop, this);
-    
+
     LOG_I("UDP sender thread started");
 }
 
@@ -45,33 +45,42 @@ void UDPSenderThread::stop(void)
         return;
     }
 
-    running_ = false;
-    cond_var_.notify_all(); // 待機中のスレッドを起こす
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        running_ = false;
+    }
+
+    cond_var_.notify_all();
 
     if (send_thread_.joinable()) {
         send_thread_.join();
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    while (!send_queue_.empty()) {
-        send_queue_.pop();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        while (!send_queue_.empty()) {
+            send_queue_.pop();
+        }
     }
 
     LOG_I("UDP sender thread stopped");
 }
 
-void UDPSenderThread::enqueue(V4L2Capture::Frame&& frame)
+void UDPSenderThread::enqueue(std::vector<uint8_t>&& data)
 {
-    if (!running_) return;
+    if (!running_) {
+        return;
+    }
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        if (send_queue_.size() > 10) {
+        /* キュー溢れ防止（最新優先） */
+        if (send_queue_.size() >= MAX_QUEUE_SiZE) {
             send_queue_.pop();
         }
 
-        send_queue_.push(std::move(frame));
+        send_queue_.push(std::move(data));
     }
 
     cond_var_.notify_one();
@@ -79,27 +88,26 @@ void UDPSenderThread::enqueue(V4L2Capture::Frame&& frame)
 
 void UDPSenderThread::send_loop(void)
 {
-    while (running_) {
-        V4L2Capture::Frame frame;
+    while (true) {
+        std::vector<uint8_t> packet;
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            
+
             cond_var_.wait(lock, [this]() {
                 return !send_queue_.empty() || !running_;
             });
 
-            if (!running_) {
+            if (!running_ && send_queue_.empty()) {
                 break;
             }
 
-            frame = std::move(send_queue_.front());
-
+            packet = std::move(send_queue_.front());
             send_queue_.pop();
         }
 
-        if (frame.data) {
-            sender_.send(frame.data, frame.length);
+        if (!packet.empty()) {
+            sender_.send(packet.data(), packet.size());
         }
     }
 }

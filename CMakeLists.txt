@@ -22,7 +22,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(SOURCES
     src/include/logger/logger.hpp
     src/lib/camera/v4l2_capture.cpp
-    src/lib/camera/camera_capture_thread.cpp
     src/lib/image_processor/image_processor.cpp
     src/lib/network/udp_sender.cpp
     src/lib/network/udp_sender_thread.cpp

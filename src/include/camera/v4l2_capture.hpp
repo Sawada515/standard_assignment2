@@ -2,9 +2,9 @@
  * @file	v4l2_capture.hpp
  * @brief	Webカメラから画像データの取得
  * @author	sawada souta
- * @version 0.1
- * @date	2025-12-13
- * @note	MJPEG対応のWebカメラを前提
+ * @version 0.2
+ * @date	2025-12-16
+ * @note	YUYVフォーマットのデータを取得
  */
 
 #ifndef V4L2_CAPTURE_HPP_
@@ -74,10 +74,11 @@ public:
 
 	/**
 	 * @brief		V4L2Captureコンストラクタ
+	 * @param[in]	device_name /dev/Video[0-9]のキャラクタデバイス名
 	 * @param[in]	width 取得する画像データの横幅
 	 * @param[in]	height 取得する画像データの縦幅
 	 */
-	V4L2Capture(uint32_t width, uint32_t height);
+	V4L2Capture(const std::string& device_name, uint32_t width, uint32_t height);
 
 	/**
 	 * @brief	V4L2Captureデコンストラクタ
@@ -91,15 +92,7 @@ public:
 	 * @return		false エラーあり
 	 * @note		エラーの場合はログを参照
 	 */
-	bool open_device(const std::string& device);
-
-	/**
-	 * @brief	キャプチャ開始
-	 * @return	true エラーなし
-	 * @return	false エラーあり
-	 * @note	エラーの場合はログを参照
-	 */
-	bool start_stream(void);
+	bool open_device(void);
 
 	/**
 	 * @brief		キャプチャしたフレームデータを取得
@@ -120,16 +113,13 @@ public:
 	bool release_frame(V4L2Capture::Frame& frame);
 
 	/**
-	 * @brief	キャプチャ停止
-	 */
-	void stop_stream(void);
-
-	/**
 	 * @brief	/dev/Video[0-9]のキャラクタデバイスを閉じる
 	 */
 	void close_device(void);
 
 private:
+	bool set_fps(uint32_t fps);
+
 	/**
 	 * @brief	mmapしたバッファ情報
 	 */

@@ -12,90 +12,89 @@
 #include <cstdint>
 
 #include <turbojpeg.h>
-
 #include <opencv2/opencv.hpp>
 
-#include "camera/v4l2_capture.hpp"
-
+/**
+ * @brief YUYV入力を前提とした画像処理クラス
+ */
 class ImageProcessor {
 public:
-    struct StdProcessedData {
-        std::vector<uint8_t> send_encoded_image;
-        cv::Mat raw_mat;
-
-        bool is_mjpeg_passthrough = false;
+    /**
+     * @brief GUI送信用の処理結果
+     */
+    struct GuiProcessedData {
+        std::vector<uint8_t> encoded_jpeg;  /**< GUI送信用JPEG */
+        cv::Mat bgr_mat;                    /**< AI/デバッグ用BGR画像 */
     };
 
-    struct AnalysisProcessedData {
-        std::vector<uint8_t> send_encoder_image;
-        cv::Mat std_processed_mat;
+    /**
+     * @brief AI解析用の処理結果
+     */
+    struct AiProcessedData {
+        cv::Mat gray_mat;
+        cv::Mat binary_mat;
     };
 
     /**
      * @brief       コンストラクタ
      * @param[in]   quality JPEGエンコード品質 (1~100)
-     * @param[in]   resize_width リサイズ後の幅 (ピクセル)
-     * @note        qualityが不正値の場合、デフォルト80を使用
-     * @note        resize_widthが不正値の場合、デフォルト640.0を使用
+     * @param[in]   resize_width リサイズ後の幅 (pixel)
      */
     ImageProcessor(uint8_t quality, double resize_width);
     ~ImageProcessor();
 
     /**
-     * @brief       GUI送信用に画像を加工する（パイプライン前半）
-     * @param[in]   frame カメラからの生データ
-     * @param[out]  output_data 加工・圧縮後のデータ
+     * @brief       GUI送信用に画像を加工する
+     * @param[in]   yuyv       YUYV生データ
+     * @param[in]   width      画像幅
+     * @param[in]   height     画像高さ
+     * @param[out]  output     加工後データ
      * @return      true 成功
-     * @return      false 失敗
-     * @note        エラーの場合、output_dataの内容は不定
-     * @details     ノイズ除去 -> コントラスト補正
      */
-    bool process_for_gui(const V4L2Capture::Frame& frame, StdProcessedData& output_data);
+    bool process_for_gui(const uint8_t* yuyv,
+                         uint32_t width,
+                         uint32_t height,
+                         GuiProcessedData& output);
 
     /**
-     * @brief       AI解析用に画像を加工する（パイプライン後半）
-     * @param[in]   src_img processForGuiで生成されたMat画像
-     * @param[out]  output_data 加工後のデータ
+     * @brief       AI解析用に画像を加工する
+     * @param[in]   bgr_img    process_for_guiで生成されたBGR画像
+     * @param[out]  output     解析用データ
      * @return      true 成功
-     * @return      false 失敗
-     * @note        エラーの場合、内部状態は不定
-     * @details     グレースケール -> 2値化 -> エッジ/輪郭 
      */
-    bool process_for_ai(const cv::Mat& src_img, AnalysisProcessedData& output_data);
+    bool process_for_ai(const cv::Mat& bgr_img,
+                        AiProcessedData& output);
 
     /**
-     * @brief       画像をJPEGエンコードする
-     * @param[in]   img エンコードする画像データ
-     * @param[out]  encoded_buffer エンコード後のバッファ
-     * @param[in]   quality JPEGエンコード品質 (1~100)
-     * @return      true 成功
-     * @return      false 失敗
-     * @note        エラーの場合、encoded_bufferの内容は不定
+     * @brief コントラスト・明るさ設定
      */
-    bool encode_image_to_jpeg(const cv::Mat& img, std::vector<uint8_t>& encoded_buffer, uint8_t quality);
+    void setContrast(double alpha, double beta);
+
+private:
+    /**
+     * @brief YUYV → BGR 変換
+     */
+    bool yuyv_to_bgr(const uint8_t* yuyv,
+                     uint32_t width,
+                     uint32_t height,
+                     cv::Mat& bgr);
 
     /**
-     * @brief Set the Contrast object
-     * @param[in] alpha 
-     * @param[in] beta 
+     * @brief BGR → JPEG エンコード
      */
-    void setContrast(double alpha, double beta); // alpha:コントラスト(1.0~3.0), beta:明るさ(0~100)
+    bool encode_to_jpeg(const cv::Mat& bgr,
+                        std::vector<uint8_t>& encoded);
 
 private:
     uint8_t quality_;
 
     double contrast_alpha_;
     double brightness_beta_;
-
     double resize_width_;
-
-    tjhandle tj_dec_;
-
-    std::vector<uint8_t> bgr_buffer_;
 
     tjhandle tj_enc_;
 
-    std::vector<uint8_t> jpg_buffer_;
+    std::vector<uint8_t> jpeg_buffer_;
 };
 
 #endif
