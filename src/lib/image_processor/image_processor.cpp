@@ -73,25 +73,51 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
 
     uint8_t* data_ptr = static_cast<uint8_t*>(frame.data);
 
-    // MJPEG判定
+    // MJPEG判定 (SOIマーカー: 0xFF, 0xD8)
     bool is_mjpeg = (frame.length > 2 && data_ptr[0] == 0xFF && data_ptr[1] == 0xD8);
 
     if (is_mjpeg) {
-        // --- MJPEG: EOI(0xFFD9)まで切り出す ---
-        size_t jpeg_size = frame.length;
-        for (size_t i = 1; i < frame.length; ++i) {
-            if (data_ptr[i-1] == 0xFF && data_ptr[i] == 0xD9) {
-                jpeg_size = i + 1;
+        // --- 【修正】 パディング除去ロジック ---
+        // V4L2バッファは末尾にゴミ(0x00等)を含むことがあるため、
+        // 後ろから 0xFF 0xD9 (EOI) を探して、正しいサイズを特定する。
+        
+        size_t actual_length = 0;
+        bool eoi_found = false;
+
+        // 最大で末尾1024バイトまで遡ってEOIを探す
+        size_t scan_limit = (frame.length > 1024) ? (frame.length - 1024) : 0;
+
+        for (size_t i = frame.length - 1; i > scan_limit; --i) {
+            if (data_ptr[i] == 0xD9 && data_ptr[i-1] == 0xFF) {
+                actual_length = i + 1; // 0xD9の後ろまでを含める
+                eoi_found = true;
                 break;
             }
         }
 
-        output_data.send_encoded_image.assign(data_ptr, data_ptr + jpeg_size);
-        output_data.is_mjpeg_passthrough = true;
+        if (!eoi_found) {
+            // EOIが見つからない場合は不完全なフレームとして捨てる
+            // LOG_W("Incomplete MJPEG frame (No EOI marker found). Skipping.");
+            return false;
+        }
+        // ----------------------------------------
 
-        int w, h, subsamp, colorspace;
-        if (tjDecompressHeader3(tj_dec_, data_ptr, jpeg_size, &w, &h, &subsamp, &colorspace) != 0) {
-            LOG_E("TurboJPEG decompress header failed: %s", tjGetErrorStr());
+        // 抽出した正しいサイズでコピー
+        output_data.send_encoded_image.assign(data_ptr, data_ptr + actual_length);
+        output_data.is_mjpeg_passthrough = true;
+        
+        int w, h, subsamp, colorspace; 
+        
+        // actual_length を渡すことが重要
+        if (tjDecompressHeader3(
+                tj_dec_,
+                data_ptr,
+                actual_length, 
+                &w,
+                &h,
+                &subsamp,
+                &colorspace) != 0) {
+            // LOG_E("TurboJPEG decompress header failed: %s", tjGetErrorStr());
             return false;
         }
 
@@ -100,30 +126,30 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
             bgr_buffer_.resize(required_size);
         }
 
-        // TurboJPEGでデコード（余分なマーカーは無視）
         if (tjDecompress2(
                 tj_dec_,
                 data_ptr,
-                jpeg_size,
+                actual_length, // ここも修正
                 bgr_buffer_.data(),
                 w,
                 0,
                 h,
                 TJPF_BGR,
-                TJFLAG_FASTDCT | TJFLAG_NOREALLOC) != 0) {
-            LOG_E("TurboJPEG decompress failed: %s", tjGetErrorStr());
+                TJFLAG_FASTDCT) != 0) {
+            // LOG_E("TurboJPEG decompress failed: %s", tjGetErrorStr());
             return false;
         }
 
         output_data.raw_mat = cv::Mat(h, w, CV_8UC3, bgr_buffer_.data());
-        return true;
 
+        return true;
     } else {
         // --- YUYV (Raw) ---
         int w = (frame.width > 0) ? frame.width : 640;
         int h = (frame.height > 0) ? frame.height : 480;
-        size_t expected_size = static_cast<size_t>(w * h * 2);
 
+        size_t expected_size = static_cast<size_t>(w * h * 2);
+        
         if (frame.length < expected_size) {
             LOG_E("Buffer too small for YUYV %dx%d! Expected: %zu, Got: %zu", 
                   w, h, expected_size, frame.length);
@@ -139,10 +165,13 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
         }
 
         output_data.is_mjpeg_passthrough = false;
-        return encode_image_to_jpeg(output_data.raw_mat, output_data.send_encoded_image, quality_);
+
+        return encode_image_to_jpeg(
+            output_data.raw_mat,
+            output_data.send_encoded_image,
+            quality_);
     }
 }
-
 
 // AI解析用処理パイプライン
 bool ImageProcessor::process_for_ai(const cv::Mat& src_img, AnalysisProcessedData& output_data)
