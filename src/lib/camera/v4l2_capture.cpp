@@ -165,6 +165,16 @@ bool V4L2Capture::get_frame(V4L2Capture::Frame& frame)
             return false;
         }
     }
+
+    if (buf.flags & V4L2_BUF_FLAG_ERROR) {
+        LOG_E("Buffer error occurred");
+
+        if (ioctl(device_fd_, VIDIOC_QBUF, &buf) < 0) {
+            LOG_E("Failed to re-queue buffer after error: %s", std::strerror(errno));
+        }
+
+        return false;
+    }
     
     frame.data = static_cast<uint8_t*>(buffers_[buf.index].start);
     frame.length = buf.bytesused;
@@ -179,6 +189,12 @@ bool V4L2Capture::get_frame(V4L2Capture::Frame& frame)
 bool V4L2Capture::release_frame(V4L2Capture::Frame& frame)
 {
     v4l2_buffer buf{};
+
+    if (device_fd_ < 0) {
+        LOG_E("Device not opened");
+
+        return false;
+    }
 
     if (frame.data == nullptr) {
         LOG_E("Frame data is null");

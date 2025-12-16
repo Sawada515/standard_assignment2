@@ -35,6 +35,13 @@ ImageProcessor::ImageProcessor(uint8_t quality, double resize_width)
 
         exit(-1);
     }
+
+    tj_enc_ = tjInitCompress();
+    if (tj_enc_ == nullptr) {
+        LOG_E("Failed to initialize TurboJPEG compressor: %s", tjGetErrorStr());
+
+        exit(-1);
+    }
 }
 
 // デストラクタ
@@ -42,6 +49,10 @@ ImageProcessor::~ImageProcessor()
 {
     if (tj_dec_ != nullptr) {
         tjDestroy(tj_dec_);
+    }
+
+    if (tj_enc_ != nullptr) {
+        tjDestroy(tj_enc_);
     }
 }
 
@@ -57,7 +68,6 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
 {
     if (frame.data == nullptr || frame.length == 0) {
         LOG_E("Invalid input frame data");
-
         return false;
     }
 
@@ -67,21 +77,21 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
     bool is_mjpeg = (frame.length > 2 && data_ptr[0] == 0xFF && data_ptr[1] == 0xD8);
 
     if (is_mjpeg) {
-        output_data.send_encoded_image.assign(data_ptr, data_ptr + frame.length);
+        // --- MJPEG: EOI(0xFFD9)まで切り出す ---
+        size_t jpeg_size = frame.length;
+        for (size_t i = 1; i < frame.length; ++i) {
+            if (data_ptr[i-1] == 0xFF && data_ptr[i] == 0xD9) {
+                jpeg_size = i + 1;
+                break;
+            }
+        }
 
+        output_data.send_encoded_image.assign(data_ptr, data_ptr + jpeg_size);
         output_data.is_mjpeg_passthrough = true;
-        
-        int w, h, subsamp, colorspace; 
-        if (tjDecompressHeader3(
-                tj_dec_,
-                data_ptr,
-                frame.length,
-                &w,
-                &h,
-                &subsamp,
-                &colorspace) != 0) {
-            LOG_E("TurboJPEG decompress header failed: %s", tjGetErrorStr());
 
+        int w, h, subsamp, colorspace;
+        if (tjDecompressHeader3(tj_dec_, data_ptr, jpeg_size, &w, &h, &subsamp, &colorspace) != 0) {
+            LOG_E("TurboJPEG decompress header failed: %s", tjGetErrorStr());
             return false;
         }
 
@@ -90,35 +100,33 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
             bgr_buffer_.resize(required_size);
         }
 
+        // TurboJPEGでデコード（余分なマーカーは無視）
         if (tjDecompress2(
                 tj_dec_,
                 data_ptr,
-                frame.length,
+                jpeg_size,
                 bgr_buffer_.data(),
                 w,
                 0,
                 h,
                 TJPF_BGR,
-                TJFLAG_FASTDCT) != 0) {
+                TJFLAG_FASTDCT | TJFLAG_NOREALLOC) != 0) {
             LOG_E("TurboJPEG decompress failed: %s", tjGetErrorStr());
-
             return false;
         }
 
         output_data.raw_mat = cv::Mat(h, w, CV_8UC3, bgr_buffer_.data());
-
         return true;
+
     } else {
         // --- YUYV (Raw) ---
         int w = (frame.width > 0) ? frame.width : 640;
         int h = (frame.height > 0) ? frame.height : 480;
-
         size_t expected_size = static_cast<size_t>(w * h * 2);
-        
+
         if (frame.length < expected_size) {
             LOG_E("Buffer too small for YUYV %dx%d! Expected: %zu, Got: %zu", 
                   w, h, expected_size, frame.length);
-
             return false;
         }
 
@@ -127,18 +135,14 @@ bool ImageProcessor::process_for_gui(const V4L2Capture::Frame& frame, StdProcess
             cv::cvtColor(yuyv_mat, output_data.raw_mat, cv::COLOR_YUV2BGR_YUYV);
         } catch (const cv::Exception& ex) {
             LOG_E("YUYV conversion failed: %s", ex.what());
-
             return false;
         }
 
         output_data.is_mjpeg_passthrough = false;
-
-        return encode_image_to_jpeg(
-            output_data.raw_mat,
-            output_data.send_encoded_image,
-            quality_);
+        return encode_image_to_jpeg(output_data.raw_mat, output_data.send_encoded_image, quality_);
     }
 }
+
 
 // AI解析用処理パイプライン
 bool ImageProcessor::process_for_ai(const cv::Mat& src_img, AnalysisProcessedData& output_data)
