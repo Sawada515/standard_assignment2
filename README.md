@@ -48,4 +48,6 @@ $ doxygen
 ## TODO
 実行確認<br>
 コンテナで実行できるように準備する<br>
-高画質のときパケット分割で送れるように変更
+高画質のときパケット分割で送れるように変更<br>
+YUYV -> USBの帯域が足りない -> 一枚ずつ取得に変更<br>
+V4L2Capture class -> public get_frame private open close ioctl
