@@ -6,9 +6,9 @@ network:
 camera:
   top_view_device: "/dev/video0"
   bottom_view_device: "/dev/video2"
-  width: 800
-  height: 600
+  width: 1280
+  height: 960
 
 image_processor:
-  jpeg_quality: 40
+  jpeg_quality: 80
   resize_width: 480

@@ -4,6 +4,7 @@
  * @author	sawada souta
  * @version 0.1
  * @date	2025-12-13
+ * @note	MJPEG対応のWebカメラを前提
  */
 
 #ifndef V4L2_CAPTURE_HPP_

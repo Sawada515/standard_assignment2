@@ -11,6 +11,8 @@
 #include <vector>
 #include <cstdint>
 
+#include <turbojpeg.h>
+
 #include <opencv2/opencv.hpp>
 
 #include "camera/v4l2_capture.hpp"
@@ -20,6 +22,8 @@ public:
     struct StdProcessedData {
         std::vector<uint8_t> send_encoded_image;
         cv::Mat raw_mat;
+
+        bool is_mjpeg_passthrough = false;
     };
 
     struct AnalysisProcessedData {
@@ -84,6 +88,14 @@ private:
     double brightness_beta_;
 
     double resize_width_;
+
+    tjhandle tj_dec_;
+
+    std::vector<uint8_t> bgr_buffer_;
+
+    tjhandle tj_enc_;
+
+    std::vector<uint8_t> jpg_buffer_;
 };
 
 #endif

@@ -10,4 +10,4 @@ gdb valgrind strace ltrace linux-perf \
 clang-format clang-tidy cppcheck \
 doxygen graphviz \
 ffmpeg tcpdump wireshark \
-
+libturbojpeg0-dev

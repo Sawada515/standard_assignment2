@@ -11,6 +11,10 @@ find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
 
+pkg_check_modules(TURBOJPEG REQUIRED libturbojpeg)
+
+include_directories(${YAML_CPP_INCLUDE_DIRS})
+include_directories(${TURBOJPEG_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/src/include)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -28,12 +32,13 @@ set(SOURCES
 
 add_executable(webcam_app ${SOURCES})
 
-#target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic)
-target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -ggdb3 -O0)
+target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3 -march=native)
+#target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -ggdb3 -O0)
 
 target_link_libraries(
     webcam_app PRIVATE
     ${OpenCV_LIBS}
     Threads::Threads
     ${YAML_CPP_LIBRARIES}
+    ${TURBOJPEG_LIBRARIES}
 )

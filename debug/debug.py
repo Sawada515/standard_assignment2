@@ -4,108 +4,164 @@ import cv2
 import numpy as np
 import threading
 import time
+from queue import Queue, Empty
 
 # --- 設定 ---
 BIND_IP = "0.0.0.0"
 PORT_TOP = 50000
 PORT_BOTTOM = 50001
-BUFFER_SIZE = 65535 # 受信バッファサイズ
+BUFFER_SIZE = 65535
 
-latest_frames = {
-    PORT_TOP: None,
-    PORT_BOTTOM: None
-}
+DISPLAY_FPS = 30
+DISPLAY_INTERVAL = 1.0 / DISPLAY_FPS
+
 running = True
 
-# 分割パケットを一時保存するバッファ
-frame_buffers = {
-    PORT_TOP: bytearray(),
-    PORT_BOTTOM: bytearray()
+# UDP → JPEGバイト列（常に最新1枚）
+raw_queues = {
+    PORT_TOP: Queue(maxsize=1),
+    PORT_BOTTOM: Queue(maxsize=1),
 }
 
-def udp_listener(port, window_name):
-    global running, latest_frames, frame_buffers
+# JPEG → デコード済み画像（常に最新1枚）
+frame_queues = {
+    PORT_TOP: Queue(maxsize=1),
+    PORT_BOTTOM: Queue(maxsize=1),
+}
 
-    # ソケット作成
+# 分割パケット再構成用
+frame_buffers = {
+    PORT_TOP: bytearray(),
+    PORT_BOTTOM: bytearray(),
+}
+
+
+def udp_listener(port, name):
+    global running
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    
-    # OSの受信バッファを拡張 (重要)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024) 
-    sock.settimeout(1.0) 
-    
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+    sock.settimeout(1.0)
+
     try:
         sock.bind((BIND_IP, port))
-        print(f"[{window_name}] Listening on port {port}...")
+        print(f"[{name}] Listening on UDP {port}")
 
         while running:
             try:
-                # 受信
-                data, addr = sock.recvfrom(BUFFER_SIZE)
-
+                data, _ = sock.recvfrom(BUFFER_SIZE)
                 if len(data) < 2:
                     continue
 
-                # 1. ヘッダー(1byte) と ペイロード(残り) に分離
                 flag = data[0]
                 payload = data[1:]
 
-                # 2. バッファに追記
                 frame_buffers[port].extend(payload)
 
-                # 3. フラグが 1 (終了) ならデコードを試みる
                 if flag == 1:
-                    np_data = np.frombuffer(frame_buffers[port], dtype=np.uint8)
-                    frame = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
+                    # 完成したJPEGをraw_queueへ
+                    jpeg_data = bytes(frame_buffers[port])
+                    frame_buffers[port].clear()
 
-                    if frame is not None:
-                        latest_frames[port] = frame
-                    else:
-                        # 分割パケットの一部が欠損するとここに来ます
-                        print(f"[{window_name}] Decode Error (Packet Loss?)")
-
-                    # バッファをリセット (次のフレーム用)
-                    frame_buffers[port] = bytearray()
+                    q = raw_queues[port]
+                    if q.full():
+                        q.get_nowait()
+                    q.put_nowait(jpeg_data)
 
             except socket.timeout:
                 continue
             except Exception as e:
-                print(f"[{window_name}] Error: {e}")
-                frame_buffers[port] = bytearray()
+                print(f"[{name}] UDP Error:", e)
+                frame_buffers[port].clear()
 
-    except Exception as e:
-        print(f"[{window_name}] Bind Error: {e}")
     finally:
         sock.close()
 
-# ... (main関数は以前のまま、表示ループのみ) ...
+
+def decode_worker(port, name):
+    global running
+
+    while running:
+        try:
+            jpeg_data = raw_queues[port].get(timeout=0.5)
+            np_data = np.frombuffer(jpeg_data, dtype=np.uint8)
+            frame = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
+
+            if frame is not None:
+                q = frame_queues[port]
+                if q.full():
+                    q.get_nowait()
+                q.put_nowait(frame)
+            else:
+                print(f"[{name}] Decode failed")
+
+        except Empty:
+            continue
+        except Exception as e:
+            print(f"[{name}] Decode Error:", e)
+
+
 def main():
     global running
-    print("Starting Receiver...")
-    
-    thread_top = threading.Thread(target=udp_listener, args=(PORT_TOP, "Top View"), daemon=True)
-    thread_bottom = threading.Thread(target=udp_listener, args=(PORT_BOTTOM, "Bottom View"), daemon=True)
 
-    thread_top.start()
-    thread_bottom.start()
+    print("Starting Receiver...")
+
+    threads = []
+
+    # UDP受信スレッド
+    threads.append(threading.Thread(
+        target=udp_listener,
+        args=(PORT_TOP, "Top View"),
+        daemon=True
+    ))
+    threads.append(threading.Thread(
+        target=udp_listener,
+        args=(PORT_BOTTOM, "Bottom View"),
+        daemon=True
+    ))
+
+    # デコードスレッド
+    threads.append(threading.Thread(
+        target=decode_worker,
+        args=(PORT_TOP, "Top View"),
+        daemon=True
+    ))
+    threads.append(threading.Thread(
+        target=decode_worker,
+        args=(PORT_BOTTOM, "Bottom View"),
+        daemon=True
+    ))
+
+    for t in threads:
+        t.start()
+
+    last_display = 0.0
 
     try:
         while True:
-            if latest_frames[PORT_TOP] is not None:
-                cv2.imshow("Top View", latest_frames[PORT_TOP])
-            if latest_frames[PORT_BOTTOM] is not None:
-                cv2.imshow("Bottom View", latest_frames[PORT_BOTTOM])
+            now = time.time()
+            if now - last_display >= DISPLAY_INTERVAL:
+                if not frame_queues[PORT_TOP].empty():
+                    frame = frame_queues[PORT_TOP].get_nowait()
+                    cv2.imshow("Top View", frame)
+
+                if not frame_queues[PORT_BOTTOM].empty():
+                    frame = frame_queues[PORT_BOTTOM].get_nowait()
+                    cv2.imshow("Bottom View", frame)
+
+                last_display = now
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                running = False
                 break
-            time.sleep(0.001)
+
     except KeyboardInterrupt:
-        running = False
-    
-    thread_top.join()
-    thread_bottom.join()
+        pass
+
+    running = False
+    time.sleep(0.5)
     cv2.destroyAllWindows()
+    print("Receiver stopped.")
+
 
 if __name__ == "__main__":
     main()
-    
