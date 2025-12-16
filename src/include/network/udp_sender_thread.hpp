@@ -46,22 +46,14 @@ public:
     /**
      * @brief 送信キューに画像データを追加する
      * @param[in] frame 送信する画像フレーム
-     * @note 内部でデータのディープコピーを行います
      */
-    void enqueue(const V4L2Capture::Frame& frame);
-
-    /**
-     * @brief       送信キューに画像データを追加する
-     * @param[in]   data 送信する画像データのバイト列
-     * @note        内部でデータのディープコピーを行います
-     */
-    void enqueue_vector(const std::vector<uint8_t>& data);
-
+    void enqueue(V4L2Capture::Frame&& frame);
+   
 private:
     /**
      * @brief 送信ループ（スレッド関数）
      */
-    void sendLoop(void);
+    void send_loop(void);
 
     UDPSender sender_;
 

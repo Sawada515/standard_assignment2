@@ -22,10 +22,53 @@ public:
 	 * @brief	画像データへのポインタ 画像サイズなどのフレーム情報
 	 */
 	struct Frame {
-		void *data;			/**< @brief mmapの戻り値用 */
-		uint32_t width;		/**< @brief 画像データの横幅 */
-		uint32_t height;	/**< @brief 画像データの縦幅 */
-		size_t length;		/**< @brief 画像データのサイズ */
+		uint8_t *data = nullptr;	/**< @brief 画像データへのポインタ */
+		
+		size_t length = 0;			/**< @brief 画像データのサイズ */
+		
+		uint32_t width = 0;			/**< @brief 画像データの横幅 */
+		uint32_t height = 0;		/**< @brief 画像データの縦幅 */
+
+		int v4l2_queue_index = -1;	/**< @brief V4L2キュー内のバッファインデックス */
+
+		V4L2Capture *owner = nullptr;	/**< @brief フレームを所有するV4L2Captureオブジェクトへのポインタ */
+
+		Frame() = default;
+
+		Frame(const Frame&) = delete;	/**< @brief コピーコンストラクタ禁止 */
+		Frame& operator=(const Frame&) = delete;	/**< @brief コピー代入禁止 */
+
+		Frame(Frame&& other) noexcept	/**< @brief ムーブコンストラクタ */
+		{
+			*this = std::move(other);
+		}
+		
+		Frame& operator=(Frame&& other) noexcept	/**< @brief ムーブ代入演算子 */
+		{
+			if (this != &other) {
+				data = other.data;
+				length = other.length;
+				width = other.width;
+				height = other.height;
+				v4l2_queue_index = other.v4l2_queue_index;
+				owner = other.owner;
+
+				other.data = nullptr;
+				other.length = 0;
+				other.width = 0;
+				other.height = 0;
+				other.v4l2_queue_index = -1;
+				other.owner = nullptr;
+			}
+
+			return *this;
+		}
+
+		~Frame() {
+			if (owner && v4l2_queue_index >= 0) {
+				owner->release_frame(*this);
+			}
+		}
 	};
 
 	/**
@@ -64,7 +107,16 @@ public:
 	 * @return		false エラーあり
 	 * @note		エラーの場合はログを参照
 	 */
-	bool read_frame(V4L2Capture::Frame& frame);
+	bool get_frame(V4L2Capture::Frame& frame);
+
+	/**
+	 * @brief		キャプチャしたフレームデータを解放
+	 * @param[in]	frame フレーム情報を渡す
+	 * @return		true エラーなし
+	 * @return		false エラーあり
+	 * @note		エラーの場合はログを参照
+	 */
+	bool release_frame(V4L2Capture::Frame& frame);
 
 	/**
 	 * @brief	キャプチャ停止

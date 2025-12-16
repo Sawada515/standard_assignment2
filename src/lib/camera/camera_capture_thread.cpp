@@ -13,6 +13,8 @@
 #include "camera/camera_capture_thread.hpp"
 #include "logger/logger.hpp"
 
+#define MAX_QUEUE_SIZE 2
+
 CameraCaptureThread::CameraCaptureThread(uint32_t width, uint32_t height, const std::string& device)
     : capture_thread_(),
       mutex_(),
@@ -55,7 +57,7 @@ void CameraCaptureThread::start(void)
     }
 
     running_ = true;
-    capture_thread_ = std::thread(&CameraCaptureThread::captureLoop, this);
+    capture_thread_ = std::thread(&CameraCaptureThread::capture_loop, this);
     
     LOG_I("Camera capture thread started");
 }
@@ -78,92 +80,52 @@ void CameraCaptureThread::stop(void)
     // キューに残っているデータをクリア（メモリリーク防止）
     std::lock_guard<std::mutex> lock(mutex_);
     while (!frame_queue_.empty()) {
-        V4L2Capture::Frame frame = frame_queue_.front();
+        V4L2Capture::Frame frame = std::move(frame_queue_.front());
         frame_queue_.pop();
-        
-        // メモリ確保してあるデータを解放
-        if (frame.data) {
-            delete[] static_cast<uint8_t*>(frame.data);
-        }
     }
 
     LOG_I("Camera capture thread stopped");
 }
 
-bool CameraCaptureThread::getframe(V4L2Capture::Frame& frame)
+bool CameraCaptureThread::get_frame(V4L2Capture::Frame& frame)
 {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    // データが来るまで待つ（最大100ms）
-    bool result = cond_var_.wait_for(lock, std::chrono::milliseconds(100), [this] {
-        return !frame_queue_.empty();
+    cond_var_.wait(lock, [this]() {
+        return !frame_queue_.empty() || !running_;
     });
 
-    if (result && !frame_queue_.empty()) {
-        frame = frame_queue_.front();
-        frame_queue_.pop();
-        
-        // 【注意】
-        // ここで frame.data には new されたポインタが入っています。
-        // 呼び出し元で使い終わったら必ず delete[] frame.data してください。
-        
-        return true;
+    if (!running_ && frame_queue_.empty()) {
+        return false;
     }
 
-    return false;
+    frame = std::move(frame_queue_.front());
+    frame_queue_.pop();
+
+    return true;
 }
 
-void CameraCaptureThread::captureLoop(void)
+void CameraCaptureThread::capture_loop(void)
 {
     LOG_I("Capture loop started");
 
     while (running_) {
-        V4L2Capture::Frame temp_frame;
-        
-        // カメラからフレームを取得
-        if (camera_.read_frame(temp_frame)) {
-            
-            // 【重要】データのディープコピー（Deep Copy）
-            // read_frameで得られるポインタは一時的なものなので、
-            // 新しいメモリ領域を作ってコピーしておく必要がある。
-            
-            V4L2Capture::Frame saved_frame;
-            saved_frame.width = temp_frame.width;
-            saved_frame.height = temp_frame.height;
-            saved_frame.length = temp_frame.length;
-            
-            // 新規メモリ確保
-            saved_frame.data = new uint8_t[temp_frame.length];
-            
-            if (saved_frame.data) {
-                std::memcpy(saved_frame.data, temp_frame.data, temp_frame.length);
+        V4L2Capture::Frame frame;
 
-                // キューへの追加（排他制御）
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    
-                    // キューがあふれないように制限（最新の5フレームだけ保持）
-                    // これがないと処理が追いつかない場合にメモリを食いつぶす
-                    if (frame_queue_.size() > 5) {
-                        V4L2Capture::Frame old_frame = frame_queue_.front();
-                        frame_queue_.pop();
-                        // 古いフレームのメモリを解放
-                        delete[] static_cast<uint8_t*>(old_frame.data);
+        if (camera_.get_frame(frame)) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
 
-                        LOG_W("Frame queue full, dropped old frame");
-                    }
-
-                    frame_queue_.push(saved_frame);
+                if (frame_queue_.size() >= MAX_QUEUE_SIZE) {
+                    frame_queue_.pop();
                 }
-                
-                // 待っているスレッド（getframe）を起こす
-                cond_var_.notify_one();
-            } else {
-                LOG_E("Failed to allocate memory for frame copy");
+
+                frame_queue_.push(std::move(frame));
             }
+
+            cond_var_.notify_one();
         } else {
-            // フレームが取れなかった場合やエラー時は少し待機
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }
 

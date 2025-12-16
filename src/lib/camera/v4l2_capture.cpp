@@ -72,7 +72,7 @@ bool V4L2Capture::start_stream()
     fmt.fmt.pix.width = width_;
     fmt.fmt.pix.height = height_;
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG; // MJPEG指定
-    fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;    // または V4L2_FIELD_NONE
+    fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;
 
     if (ioctl(device_fd_, VIDIOC_S_FMT, &fmt) < 0) {
         LOG_E("Failed to set format: %s", std::strerror(errno));
@@ -80,7 +80,6 @@ bool V4L2Capture::start_stream()
         return false;
     }
 
-    // 実際に設定されたサイズをメンバ変数に更新（カメラが指定サイズ未対応の場合に丸められるため）
     if (fmt.fmt.pix.width != width_ || fmt.fmt.pix.height != height_) {
         LOG_I("Resolution adjusted by driver: %d x %d", fmt.fmt.pix.width, fmt.fmt.pix.height);
 
@@ -143,7 +142,7 @@ bool V4L2Capture::start_stream()
     return true;
 }
 
-bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
+bool V4L2Capture::get_frame(V4L2Capture::Frame& frame)
 {
     if (device_fd_ < 0) {
         LOG_E("Device not opened");
@@ -157,10 +156,8 @@ bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
 
-    // バッファを取り出す (Dequeue)
     if (ioctl(device_fd_, VIDIOC_DQBUF, &buf) < 0) {
         if (errno == EAGAIN) {
-            // ノンブロッキングモードでデータがまだない場合
             return false; 
         } else {
             LOG_E("Failed to dequeue buffer: %s", std::strerror(errno));
@@ -168,20 +165,31 @@ bool V4L2Capture::read_frame(V4L2Capture::Frame& frame)
             return false;
         }
     }
-
-    // 【重要】
-    // ここでポインタを渡すだけだと、下の QBUF を呼んだ瞬間にデータが上書きされる可能性があります。
-    // 本来は memcpy するか、QBUF をユーザーが使い終わるまで待つ設計にします。
-    // 今回は安全のため「ポインタを渡すが、呼び出し元ですぐにコピーすること」を前提とします。
-    // もし呼び出し元で長時間保持したい場合は、ここで memcpy してください。
     
     frame.data = static_cast<uint8_t*>(buffers_[buf.index].start);
     frame.length = buf.bytesused;
     frame.width = width_;
     frame.height = height_;
+    frame.v4l2_queue_index = buf.index;
+    frame.owner = this;
 
-    // バッファを返却する (Queue)
-    // 注意: これを実行した瞬間に frame.data の中身は保証されなくなります！
+    return true;
+}
+
+bool V4L2Capture::release_frame(V4L2Capture::Frame& frame)
+{
+    v4l2_buffer buf{};
+
+    if (frame.data == nullptr) {
+        LOG_E("Frame data is null");
+
+        return false;
+    }
+
+    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index = frame.v4l2_queue_index;
+
     if (ioctl(device_fd_, VIDIOC_QBUF, &buf) < 0) {
         LOG_E("Failed to re-queue buffer: %s", std::strerror(errno));
         

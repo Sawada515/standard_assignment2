@@ -54,10 +54,10 @@ public:
      * @return      false エラーあり
      * @note        エラーの場合はログを参照
      */
-    bool getframe(V4L2Capture::Frame& frame);
+    bool get_frame(V4L2Capture::Frame& frame);
 
 private:
-    void captureLoop(void);
+    void capture_loop(void);
 
     std::thread capture_thread_;
     std::mutex mutex_;

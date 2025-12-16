@@ -19,6 +19,9 @@ ImageProcessor::ImageProcessor(uint8_t quality, double resize_width)
 {
     quality_ = (quality <= 0 || quality > 100) ? 80 : quality;
     resize_width_ = (resize_width_ <= 0.0) ? 640.0 : resize_width_;
+
+    cv::setNumThreads(2);
+    cv::setUseOptimized(true);
 }
 
 // デストラクタ

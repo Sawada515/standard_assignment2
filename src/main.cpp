@@ -66,34 +66,25 @@ int main() {
         V4L2Capture::Frame top_view_frame;
         V4L2Capture::Frame bottom_view_frame;
 
-        if (cam_top_view.getframe(top_view_frame)) {
+        if (cam_top_view.get_frame(top_view_frame)) {
             
             ImageProcessor::StdProcessedData processed;
             
             if (processor.process_for_gui(top_view_frame, processed)) {
                 
                 if (!processed.send_encoded_image.empty()) {
-                    top_view_sender.enqueue_vector(processed.send_encoded_image);
+                    top_view_sender.enqueue(std::move(top_view_frame));
                 }
             }
-            
-            if (top_view_frame.data) {
-                delete[] static_cast<uint8_t*>(top_view_frame.data);
-            }
-
         }
-        if (cam_bottom_view.getframe(bottom_view_frame)) {
+        if (cam_bottom_view.get_frame(bottom_view_frame)) {
             ImageProcessor::StdProcessedData processed;
 
             if (processor.process_for_gui(bottom_view_frame, processed)) {
 
                 if (!processed.send_encoded_image.empty()) {
-                    bottom_view_sender.enqueue_vector(processed.send_encoded_image);
+                    bottom_view_sender.enqueue(std::move(bottom_view_frame));
                 }
-            }
-
-            if (bottom_view_frame.data) {
-                delete[] static_cast<uint8_t*>(bottom_view_frame.data);
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
