@@ -104,7 +104,11 @@ int main()
                     }
 
                     if (!ai.image.empty()) {
-                        cv::imwrite("tmp_top.jpeg", ai.image);
+                        cv::Mat top_mat(ai.height, ai.width, CV_8UC3, ai.image.data());
+
+                        cv::imwrite("/home/shikoku-pc/img/tmp_top.jpeg", top_mat);
+                    } else {
+                        LOG_W("top ai image is empty");
                     }
                 }
             } else {
@@ -136,7 +140,11 @@ int main()
                     }
 
                     if (!ai.image.empty()) {
-                        cv::imwrite("./tmp_bottom.jpeg", ai.image);
+                        cv::Mat bottom_mat(ai.height, ai.width, CV_8UC3, ai.image.data());
+
+                        cv::imwrite("/home/shikoku-pc/img/tmp_bottom.jpeg", bottom_mat);
+                    } else {
+                        LOG_W("bottom ai image is empty");
                     }
                 }
             } else {
