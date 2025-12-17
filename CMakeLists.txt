@@ -31,7 +31,7 @@ set(SOURCES
 
 add_executable(webcam_app ${SOURCES})
 
-target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3 -march=native)
+target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3 -march=native -march=armv8-a)
 #target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -ggdb3 -O0)
 
 target_link_libraries(
@@ -40,4 +40,5 @@ target_link_libraries(
     Threads::Threads
     ${YAML_CPP_LIBRARIES}
     ${TURBOJPEG_LIBRARIES}
+    m
 )
