@@ -10,5 +10,5 @@ camera:
   height: 960
 
 image_processor:
-  jpeg_quality: 100
-  resize_width: 800
+  jpeg_quality: 90
+  resize_width: 1280

@@ -8,6 +8,8 @@
 #include "network/udp_sender_thread.hpp"
 #include "image_processor/image_processor.hpp"
 
+#include <opencv2/opencv.hpp>
+
 volatile std::sig_atomic_t g_signal_status = 0;
 
 void signal_handler(int signal)
@@ -100,6 +102,10 @@ int main()
                         top_view_sender.enqueue(
                             std::move(gui.image));
                     }
+
+                    if (!ai.image.empty()) {
+                        cv::imwrite("tmp_top.jpeg", ai.image);
+                    }
                 }
             } else {
                 LOG_W("Failed to capture frame from Top Camera");
@@ -127,6 +133,10 @@ int main()
                     if (gui.is_jpeg && !gui.image.empty()) {
                         bottom_view_sender.enqueue(
                             std::move(gui.image));
+                    }
+
+                    if (!ai.image.empty()) {
+                        cv::imwrite("./tmp_bottom.jpeg", ai.image);
                     }
                 }
             } else {

@@ -96,9 +96,10 @@ bool ImageProcessor::bgr_to_jpeg(const std::vector<uint8_t>& bgr,
         TJPF_BGR,       // 入力はBGR
         &outbuf,
         &outsize,
-        TJSAMP_420,     // 4:2:0 サブサンプリング
+        TJSAMP_444,     // 4:4:4 サブサンプリング
         quality,
-        TJFLAG_FASTDCT
+        //TJFLAG_FASTDCT
+        TJFLAG_ACCURATEDCT
     );
 
     tjDestroy(tj_instance);

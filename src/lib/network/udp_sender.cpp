@@ -29,6 +29,10 @@ UDPSender::UDPSender(const std::string& ip, uint16_t port)
         return;
     }
 
+    int sendbuf_size = 4 * 1024 * 1024;
+
+    setsockopt(sock_fd_, SOL_SOCKET, SO_SNDBUF, &sendbuf_size, sizeof(sendbuf_size));
+
     std::memset(&addr_, 0, sizeof(addr_));
     addr_.sin_family = AF_INET;
     addr_.sin_port = htons(port);
@@ -105,7 +109,7 @@ bool UDPSender::send(const void* data, size_t size)
 
         offset += chunk_size;
 
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        std::this_thread::sleep_for(std::chrono::microseconds(300));
     }
 
     return true;
