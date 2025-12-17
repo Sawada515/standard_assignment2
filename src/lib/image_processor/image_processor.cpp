@@ -1,162 +1,178 @@
 /**
  * @file    image_processor.cpp
- * @brief   画像処理クラス実装 (YUYV → GUI / AI)
+ * @brief   画像処理（YUYV入力 → GUI / AI 出力）
  * @author  sawada souta
- * @date    2025-12-14
+ * @date    2025-12-16
  */
 
-#include "image_processor/image_processor.hpp"
-
 #include <cstring>
-#include <stdexcept>
+#include <algorithm>
+#include <vector>
+#include <turbojpeg.h>
 
-#include <opencv2/imgproc.hpp>
+#include "image_processor/image_processor.hpp"
+#include "logger/logger.hpp"
 
-/* ================================
- * コンストラクタ / デストラクタ
- * ================================ */
-
-ImageProcessor::ImageProcessor(uint8_t quality, double resize_width)
-    : quality_(quality),
-      contrast_alpha_(1.0),
-      brightness_beta_(0.0),
-      resize_width_(resize_width),
-      tj_enc_(nullptr),
-      jpeg_buffer_()
+ImageProcessor::ImageProcessor(int jpeg_quality, uint32_t resize_width) :
+    jpeg_quality_(jpeg_quality),
+    resize_width_(resize_width)
 {
-    if (quality_ < 1 || quality_ > 100) {
-        quality_ = 80;
-    }
-
-    if (resize_width_ <= 0.0) {
-        resize_width_ = 640.0;
-    }
-
-    tj_enc_ = tjInitCompress();
-    if (!tj_enc_) {
-        throw std::runtime_error("tjInitCompress failed");
-    }
 }
 
-ImageProcessor::~ImageProcessor()
-{
-    if (tj_enc_) {
-        tjDestroy(tj_enc_);
-    }
-}
+ImageProcessor::~ImageProcessor() = default;
 
-bool ImageProcessor::process_for_gui(const uint8_t* yuyv,
-                                     uint32_t width,
-                                     uint32_t height,
-                                     GuiProcessedData& output)
+bool ImageProcessor::process_frame(const uint8_t* yuyv,
+                                   uint32_t width,
+                                   uint32_t height,
+                                   GuiProcessedData& gui_data,
+                                   AiProcessedData& ai_data)
 {
     if (!yuyv || width == 0 || height == 0) {
         return false;
     }
 
-    cv::Mat bgr;
+    /* ---------- AI用（BGR） ---------- */
+    yuyv_to_bgr(yuyv, width, height, ai_data.image);
+    ai_data.width  = width;
+    ai_data.height = height;
+    ai_data.channels = 3;
 
-    /* YUYV → BGR */
-    if (!yuyv_to_bgr(yuyv, width, height, bgr)) {
+    /* ---------- GUI用 JPEG（TurboJPEG） ---------- */
+    if (!yuyv_to_jpeg_debug(yuyv, width, height, jpeg_quality_, gui_data.image)) {
         return false;
     }
-
-    /* リサイズ（必要な場合のみ） */
-    if (resize_width_ > 0 && bgr.cols != static_cast<int>(resize_width_)) {
-        double scale = resize_width_ / static_cast<double>(bgr.cols);
-        cv::resize(bgr, bgr, cv::Size(), scale, scale, cv::INTER_LINEAR);
-    }
-
-    /* コントラスト・明るさ補正 */
-    bgr.convertTo(bgr, -1, contrast_alpha_, brightness_beta_);
-
-    /* JPEGエンコード */
-    if (!encode_to_jpeg(bgr, output.encoded_jpeg)) {
-        return false;
-    }
-
-    output.bgr_mat = bgr;
+    gui_data.width = width;
+    gui_data.height = height;
+    gui_data.is_jpeg = true;
 
     return true;
 }
 
-bool ImageProcessor::process_for_ai(const cv::Mat& bgr_img,
-                                    AiProcessedData& output)
-{
-    if (bgr_img.empty()) {
-        return false;
-    }
-
-    /* グレースケール化 */
-    cv::cvtColor(bgr_img, output.gray_mat, cv::COLOR_BGR2GRAY);
-
-    /* 2値化（Otsu） */
-    cv::threshold(output.gray_mat,
-                  output.binary_mat,
-                  0,
-                  255,
-                  cv::THRESH_BINARY | cv::THRESH_OTSU);
-
-    return true;
-}
-
-void ImageProcessor::setContrast(double alpha, double beta)
-{
-    contrast_alpha_ = alpha;
-    brightness_beta_ = beta;
-}
-
-bool ImageProcessor::yuyv_to_bgr(const uint8_t* yuyv,
+void ImageProcessor::yuyv_to_bgr(const uint8_t* yuyv,
                                  uint32_t width,
                                  uint32_t height,
-                                 cv::Mat& bgr)
+                                 std::vector<uint8_t>& bgr)
 {
-    if (!yuyv) {
-        return false;
+    bgr.resize(width * height * 3);
+
+    for (uint32_t i = 0, j = 0; i < width * height * 2; i += 4) {
+        int y0 = yuyv[i + 0];
+        int u  = yuyv[i + 1] - 128;
+        int y1 = yuyv[i + 2];
+        int v  = yuyv[i + 3] - 128;
+
+        auto convert = [&](int y, int& r, int& g, int& b) {
+            r = y + 1.402 * v;
+            g = y - 0.344 * u - 0.714 * v;
+            b = y + 1.772 * u;
+            r = std::clamp(r, 0, 255);
+            g = std::clamp(g, 0, 255);
+            b = std::clamp(b, 0, 255);
+        };
+
+        int r, g, b;
+        convert(y0, r, g, b);
+        bgr[j++] = b;
+        bgr[j++] = g;
+        bgr[j++] = r;
+
+        convert(y1, r, g, b);
+        bgr[j++] = b;
+        bgr[j++] = g;
+        bgr[j++] = r;
     }
+}
 
-    /*
-     * YUYV (YUY2) フォーマット
-     * [Y0 U Y1 V] が 2pixel 単位で並ぶ
-     */
+void ImageProcessor::extract_resistor_candidates(const uint8_t* yuyv,
+                                                 uint32_t width,
+                                                 uint32_t height,
+                                                 std::vector<uint8_t>& binary)
+{
+    binary.resize(width * height);
 
-    cv::Mat yuyv_mat(height, width, CV_8UC2, const_cast<uint8_t*>(yuyv));
+    for (uint32_t i = 0, p = 0; i < width * height * 2; i += 2, ++p) {
+        uint8_t y = yuyv[i];
+        binary[p] = (y > 120) ? 255 : 0;
+    }
+}
 
-    cv::cvtColor(yuyv_mat, bgr, cv::COLOR_YUV2BGR_YUY2);
+bool ImageProcessor::yuyv_to_jpeg_debug(const uint8_t* yuyv,
+                                        uint32_t width,
+                                        uint32_t height,
+                                        int quality,
+                                        std::vector<uint8_t>& jpeg)
+{
+    if (!yuyv || width == 0 || height == 0) return false;
+
+    std::vector<uint8_t> bgr;
+    yuyv_to_bgr(yuyv, width, height, bgr);
+
+    tjhandle tj_instance = tjInitCompress();
+    if (!tj_instance) return false;
+
+    unsigned char* outbuf = nullptr;
+    unsigned long outsize = 0;
+
+    int ret = tjCompress2(
+        tj_instance,
+        bgr.data(),
+        width,
+        0,              // pitch = 0 -> width * 3
+        height,
+        TJPF_BGR,       // 入力フォーマット
+        &outbuf,
+        &outsize,
+        TJSAMP_420,     // サブサンプリング
+        quality,
+        TJFLAG_FASTDCT  // 高速圧縮
+    );
+
+    tjDestroy(tj_instance);
+
+    if (ret != 0) return false;
+
+    jpeg.assign(outbuf, outbuf + outsize);
+    tjFree(outbuf);
 
     return true;
 }
 
-bool ImageProcessor::encode_to_jpeg(const cv::Mat& bgr,
-                                    std::vector<uint8_t>& encoded)
+void ImageProcessor::resize_for_gui(const std::vector<uint8_t>& src,
+                                    uint32_t src_w,
+                                    uint32_t src_h,
+                                    uint32_t dst_w,
+                                    uint32_t dst_h,
+                                    std::vector<uint8_t>& dst)
 {
-    if (bgr.empty()) {
-        return false;
+    if (src.empty() || src_w == 0 || src_h == 0 ||
+        dst_w == 0 || dst_h == 0) {
+        dst.clear();
+        return;
     }
 
-    unsigned char* jpeg_buf = nullptr;
-    unsigned long jpeg_size = 0;
+    constexpr uint32_t CHANNELS = 3; // BGR
 
-    int ret = tjCompress2(
-        tj_enc_,
-        bgr.data,
-        bgr.cols,
-        0,
-        bgr.rows,
-        TJPF_BGR,
-        &jpeg_buf,
-        &jpeg_size,
-        TJSAMP_420,
-        quality_,
-        TJFLAG_FASTDCT
-    );
+    dst.resize(dst_w * dst_h * CHANNELS);
 
-    if (ret != 0) {
-        return false;
+    const float scale_x = static_cast<float>(src_w) / dst_w;
+    const float scale_y = static_cast<float>(src_h) / dst_h;
+
+    for (uint32_t y = 0; y < dst_h; ++y) {
+        uint32_t src_y = static_cast<uint32_t>(y * scale_y);
+        if (src_y >= src_h) src_y = src_h - 1;
+
+        for (uint32_t x = 0; x < dst_w; ++x) {
+            uint32_t src_x = static_cast<uint32_t>(x * scale_x);
+            if (src_x >= src_w) src_x = src_w - 1;
+
+            const uint32_t src_idx =
+                (src_y * src_w + src_x) * CHANNELS;
+            const uint32_t dst_idx =
+                (y * dst_w + x) * CHANNELS;
+
+            dst[dst_idx + 0] = src[src_idx + 0]; // B
+            dst[dst_idx + 1] = src[src_idx + 1]; // G
+            dst[dst_idx + 2] = src[src_idx + 2]; // R
+        }
     }
-
-    encoded.assign(jpeg_buf, jpeg_buf + jpeg_size);
-    tjFree(jpeg_buf);
-
-    return true;
 }

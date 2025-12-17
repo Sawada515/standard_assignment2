@@ -4,7 +4,7 @@
  * @author	sawada souta
  * @version 0.2
  * @date	2025-12-16
- * @note	YUYVフォーマットのデータを取得
+ * @note	YUYVフォーマットの画像データを1枚取得
  */
 
 #ifndef V4L2_CAPTURE_HPP_
@@ -23,53 +23,12 @@ public:
 	 * @brief	画像データへのポインタ 画像サイズなどのフレーム情報
 	 */
 	struct Frame {
-		uint8_t *data = nullptr;	/**< @brief 画像データへのポインタ */
-		
-		size_t length = 0;			/**< @brief 画像データのサイズ */
+		std::vector<uint8_t>data;	/**< @brief 画像データへのポインタ */
 		
 		uint32_t width = 0;			/**< @brief 画像データの横幅 */
 		uint32_t height = 0;		/**< @brief 画像データの縦幅 */
 
-		int v4l2_queue_index = -1;	/**< @brief V4L2キュー内のバッファインデックス */
-
-		V4L2Capture *owner = nullptr;	/**< @brief フレームを所有するV4L2Captureオブジェクトへのポインタ */
-
-		Frame() = default;
-
-		Frame(const Frame&) = delete;	/**< @brief コピーコンストラクタ禁止 */
-		Frame& operator=(const Frame&) = delete;	/**< @brief コピー代入禁止 */
-
-		Frame(Frame&& other) noexcept	/**< @brief ムーブコンストラクタ */
-		{
-			*this = std::move(other);
-		}
-		
-		Frame& operator=(Frame&& other) noexcept	/**< @brief ムーブ代入演算子 */
-		{
-			if (this != &other) {
-				data = other.data;
-				length = other.length;
-				width = other.width;
-				height = other.height;
-				v4l2_queue_index = other.v4l2_queue_index;
-				owner = other.owner;
-
-				other.data = nullptr;
-				other.length = 0;
-				other.width = 0;
-				other.height = 0;
-				other.v4l2_queue_index = -1;
-				other.owner = nullptr;
-			}
-
-			return *this;
-		}
-
-		~Frame() {
-			if (owner && v4l2_queue_index >= 0) {
-				owner->release_frame(*this);
-			}
-		}
+		uint32_t fourcc = 0;		/**< @brief 画像データのフォーマット fourcc */
 	};
 
 	/**
@@ -86,6 +45,16 @@ public:
 	~V4L2Capture(void);
 
 	/**
+	 * @brief		キャプチャしたフレームデータを取得
+	 * @param[in]	frame フレーム情報を渡す
+	 * @return		true エラーなし
+	 * @return		false エラーあり
+	 * @note		エラーの場合はログを参照
+	 */
+	bool get_once_frame(V4L2Capture::Frame& frame);
+
+private:
+	/**
 	 * @brief		/dev/Video[0-9]のキャラクタデバイスを開く
 	 * @param[in]	device /dev/Video[0-9]を指定
 	 * @return		true エラーなし
@@ -95,44 +64,24 @@ public:
 	bool open_device(void);
 
 	/**
-	 * @brief		キャプチャしたフレームデータを取得
-	 * @param[in]	frame フレーム情報を渡す
-	 * @return		true エラーなし
-	 * @return		false エラーあり
-	 * @note		エラーの場合はログを参照
-	 */
-	bool get_frame(V4L2Capture::Frame& frame);
-
-	/**
-	 * @brief		キャプチャしたフレームデータを解放
-	 * @param[in]	frame フレーム情報を渡す
-	 * @return		true エラーなし
-	 * @return		false エラーあり
-	 * @note		エラーの場合はログを参照
-	 */
-	bool release_frame(V4L2Capture::Frame& frame);
-
-	/**
 	 * @brief	/dev/Video[0-9]のキャラクタデバイスを閉じる
 	 */
 	void close_device(void);
 
-private:
-	bool set_fps(uint32_t fps);
-
 	/**
-	 * @brief	mmapしたバッファ情報
+	 * @brief		フレームフォーマットを設定する
+	 * @param[in]	width 取得する画像データの横幅
+	 * @param[in]	height 取得する画像データの縦幅
+	 * @param[in]	fourcc 取得する画像データのフォーマット fourcc
+	 * @return		true エラーなし
+	 * @return		false エラーあり
+	 * @note		エラーの場合はログを参照
 	 */
-	struct Buffer {
-		void *start;
-		size_t length;
-	};
+	bool set_frame_format(uint32_t width, uint32_t height, uint32_t fourcc);
 
 	std::string device_name_;	/**< @brief /dev/Video[0-9]のキャラクタデバイス名 */
 
 	int device_fd_;				/**< @brief /dev/Video[0-9]のキャラクタデバイスファイルディスクリプタ */
-
-	std::vector<Buffer> buffers_;	/**< @brief mmapしたバッファ情報 */
 
 	uint32_t width_;			/**< @brief 取得する画像データの横幅 */
 	uint32_t height_;			/**< @brief 取得する画像データの縦幅 */
