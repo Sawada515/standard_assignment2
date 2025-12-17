@@ -29,6 +29,7 @@ int main()
     std::signal(SIGINT, signal_handler);
     LOG_I("Debug GUI Streaming Start");
 
+    /* ---------- カメラインスタンス生成 ---------- */
     V4L2Capture top_view_cam(
         config.camera.top_view_device,
         config.camera.width,
@@ -39,7 +40,22 @@ int main()
         config.camera.width,
         config.camera.height);
 
+    /* ---------- 【追加】カメラ初期化 (Open & Mmap) ---------- */
+    // ループに入る前に、ここでデバイスを開きメモリを確保します。
+    // これにより、以後はファイルディスクリプタを開いたまま維持します。
+    LOG_I("Initializing Top View Camera...");
+    if (!top_view_cam.initialize()) {
+        LOG_E("Failed to initialize Top View Camera (%s)", config.camera.top_view_device.c_str());
+        return -1;
+    }
 
+    LOG_I("Initializing Bottom View Camera...");
+    if (!bottom_view_cam.initialize()) {
+        LOG_E("Failed to initialize Bottom View Camera (%s)", config.camera.bottom_view_device.c_str());
+        return -1;
+    }
+
+    /* ---------- ネットワーク送信設定 ---------- */
     UDPSenderThread top_view_sender(
         config.network.dest_ip,
         config.network.top_view_port);
@@ -51,6 +67,7 @@ int main()
     top_view_sender.start();
     bottom_view_sender.start();
 
+    /* ---------- 画像処理設定 ---------- */
     ImageProcessor processor(
         config.image_processor.jpeg_quality,
         config.image_processor.resize_width);
@@ -60,8 +77,13 @@ int main()
     while (g_signal_status == 0) {
         auto loop_start = std::chrono::steady_clock::now();
 
+        // -------------------------------------------------
+        // Top Camera Process
+        // -------------------------------------------------
         {
             V4L2Capture::Frame frame;
+            // 内部で STREAMON -> 撮影 -> STREAMOFF を行う
+            // (デバイスはOpenされたままなので高速)
             if (top_view_cam.get_once_frame(frame)) {
 
                 ImageProcessor::GuiProcessedData gui;
@@ -79,11 +101,17 @@ int main()
                             std::move(gui.image));
                     }
                 }
+            } else {
+                LOG_W("Failed to capture frame from Top Camera");
             }
         }
 
+        // -------------------------------------------------
+        // Bottom Camera Process
+        // -------------------------------------------------
         {
             V4L2Capture::Frame frame;
+            // ここで TopカメラのUSB帯域は解放済みなので、Bottomカメラが帯域を使える
             if (bottom_view_cam.get_once_frame(frame)) {
 
                 ImageProcessor::GuiProcessedData gui;
@@ -101,6 +129,8 @@ int main()
                             std::move(gui.image));
                     }
                 }
+            } else {
+                LOG_W("Failed to capture frame from Bottom Camera");
             }
         }
 

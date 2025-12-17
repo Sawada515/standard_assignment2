@@ -104,6 +104,8 @@ bool UDPSender::send(const void* data, size_t size)
         }
 
         offset += chunk_size;
+
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
 
     return true;
