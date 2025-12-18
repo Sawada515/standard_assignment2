@@ -39,9 +39,6 @@ int main()
         config.camera.width,
         config.camera.height);
 
-    /* ---------- 【追加】カメラ初期化 (Open & Mmap) ---------- */
-    // ループに入る前に、ここでデバイスを開きメモリを確保します。
-    // これにより、以後はファイルディスクリプタを開いたまま維持します。
     LOG_I("Initializing Top View Camera...");
     if (!top_view_cam.initialize()) {
         LOG_E("Failed to initialize Top View Camera (%s)", config.camera.top_view_device.c_str());
