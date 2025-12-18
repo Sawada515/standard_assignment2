@@ -10,6 +10,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#define MODEL_PATH "../train_data/best.onnx"
+
 volatile std::sig_atomic_t g_signal_status = 0;
 
 void signal_handler(int signal)
@@ -37,11 +39,6 @@ int main()
         config.camera.width,
         config.camera.height);
 
-    V4L2Capture bottom_view_cam(
-        config.camera.bottom_view_device,
-        config.camera.width,
-        config.camera.height);
-
     /* ---------- 【追加】カメラ初期化 (Open & Mmap) ---------- */
     // ループに入る前に、ここでデバイスを開きメモリを確保します。
     // これにより、以後はファイルディスクリプタを開いたまま維持します。
@@ -51,26 +48,16 @@ int main()
         return -1;
     }
 
-    LOG_I("Initializing Bottom View Camera...");
-    if (!bottom_view_cam.initialize()) {
-        LOG_E("Failed to initialize Bottom View Camera (%s)", config.camera.bottom_view_device.c_str());
-        return -1;
-    }
-
     /* ---------- ネットワーク送信設定 ---------- */
     UDPSenderThread top_view_sender(
         config.network.dest_ip,
         config.network.top_view_port);
 
-    UDPSenderThread bottom_view_sender(
-        config.network.dest_ip,
-        config.network.bottom_view_port);
-
     top_view_sender.start();
-    bottom_view_sender.start();
 
     /* ---------- 画像処理設定 ---------- */
     ImageProcessor processor(
+        MODEL_PATH,
         config.image_processor.jpeg_quality,
         config.image_processor.resize_width);
 
@@ -116,47 +103,10 @@ int main()
             }
         }
 
-        // -------------------------------------------------
-        // Bottom Camera Process
-        // -------------------------------------------------
-        {
-            V4L2Capture::Frame frame;
-            // ここで TopカメラのUSB帯域は解放済みなので、Bottomカメラが帯域を使える
-            if (bottom_view_cam.get_once_frame(frame)) {
-
-                ImageProcessor::GuiProcessedData gui;
-                ImageProcessor::AiProcessedData  ai;
-
-                if (processor.process_frame(
-                        frame.data.data(),
-                        frame.width,
-                        frame.height,
-                        gui,
-                        ai))
-                {
-                    if (gui.is_jpeg && !gui.image.empty()) {
-                        bottom_view_sender.enqueue(
-                            std::move(gui.image));
-                    }
-
-                    if (!ai.image.empty()) {
-                        cv::Mat bottom_mat(ai.height, ai.width, CV_8UC3, ai.image.data());
-
-                        cv::imwrite("/home/shikoku-pc/img/tmp_bottom.jpeg", bottom_mat);
-                    } else {
-                        LOG_W("bottom ai image is empty");
-                    }
-                }
-            } else {
-                LOG_W("Failed to capture frame from Bottom Camera");
-            }
-        }
-
         std::this_thread::sleep_until(loop_start + std::chrono::milliseconds(250));
     }
 
     top_view_sender.stop();
-    bottom_view_sender.stop();
 
     LOG_I("Debug GUI Streaming Stop");
 

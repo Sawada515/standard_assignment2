@@ -1,0 +1,32 @@
+# 開発・ビルド用コンテナ
+# vscode Dec Containerを使用
+
+FROM debian:bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    pkg-config \
+    gdb \
+    git \
+    libopencv-dev \
+    libopencv-contrib-dev \
+    libv4l-dev \
+    v4l-utils \
+    libyaml-cpp-dev \
+    libasio-dev \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN echo "root:password" | chpasswd
+RUN sed -i "ss/#PermitRootLogin prohibit-password/PermitRootLogin yes/" /etc/ssh/sshd_config
+
+EXPOSE 50001
+EXPOSE 50002
+
+CMD ["bin/bash"]

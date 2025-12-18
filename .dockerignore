@@ -1,0 +1,5 @@
+build/
+bin/
+git/
+Dockerfile.dev
+Dockerfile.run
