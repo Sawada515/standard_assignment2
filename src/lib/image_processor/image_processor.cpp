@@ -11,8 +11,11 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <ctime>
+#include <cstdio>
 #include <turbojpeg.h>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 
 // コンストラクタ
 ImageProcessor::ImageProcessor(const std::string& model_path, int jpeg_quality, uint32_t resize_width) :
@@ -210,6 +213,14 @@ double ImageProcessor::estimate_resistance_value(const cv::Mat& full_image, cons
     // ROI (Region of Interest) 切り出し
     cv::Mat resistor_roi = full_image(safe_box);
 
+    char file_name[128];
+    time_t t = time(NULL);
+    struct tm local;
+    localtime_r(&t, &local);
+    strftime(file_name, sizeof(file_name), "./%H%M%S.bmp", &local);
+
+    cv::imwrite(file_name, resistor_roi);
+
     /* * TODO: 抵抗値読み取りロジックの実装
      * 1. ROI画像をHSVなどに変換
      * 2. エッジ検出や輪郭抽出で抵抗本体の向きを補正
@@ -295,4 +306,15 @@ bool ImageProcessor::bgr_to_jpeg(const cv::Mat& bgr_mat, int quality, std::vecto
     tjFree(outbuf);
 
     return true;
+}
+
+cv::Mat get_roi_resistor_image(const cv::Mat& base_image, const cv::Rect& box)
+{
+    cv::Rect safe_box = box & cv::Rect(0, 0, base_image.cols, base_image.rows);
+
+    if (safe_box.area() < 0) {
+        return cv::Mat();
+    }
+
+    return base_image(safe_box).clone();
 }

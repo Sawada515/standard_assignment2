@@ -126,6 +126,7 @@ private:
      */
     bool bgr_to_jpeg(const cv::Mat& bgr_mat, int quality, std::vector<uint8_t>& jpeg);
 
+    cv::Mat get_roi_resistor_image(const cv::Mat& base_image, const cv::Rect& box);
 
     int jpeg_quality_;          /**< JPEG圧縮品質 */
     uint32_t resize_width_;     /**< リサイズ幅 (現在未使用だが拡張用に保持) */
