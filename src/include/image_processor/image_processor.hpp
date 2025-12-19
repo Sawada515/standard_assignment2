@@ -11,8 +11,11 @@
 #include <cstdint>
 #include <vector>
 #include <string>
+
+#include <turbojpeg.h>
+
 #include <opencv2/core.hpp>
-#include <opencv2/dnn.hpp> // AI用モジュール
+#include <opencv2/dnn.hpp>
 
 /**
  * @class ImageProcessor
@@ -91,8 +94,6 @@ public:
                        AiProcessedData& ai_data);
 
 private:
-    /* ---------- 内部処理用関数 ---------- */
-
     /**
      * @brief AI推論を実行し、抵抗の位置を検出する
      * @param[in]  input_image   入力画像 (BGR)
@@ -126,7 +127,6 @@ private:
     bool bgr_to_jpeg(const cv::Mat& bgr_mat, int quality, std::vector<uint8_t>& jpeg);
 
 
-    /* ---------- メンバ変数 ---------- */
     int jpeg_quality_;          /**< JPEG圧縮品質 */
     uint32_t resize_width_;     /**< リサイズ幅 (現在未使用だが拡張用に保持) */
 
@@ -137,6 +137,9 @@ private:
     const float CONF_THRESHOLD = 0.45f; /**< 検出信頼度の閾値 */
     const float NMS_THRESHOLD  = 0.50f; /**< NMS（重なり除去）の閾値 */
     const int INPUT_SIZE = 640;         /**< YOLOv8モデルの入力サイズ (640x640) */
+
+    cv::Mat blob_;
+    tjhandle tj_instance_;
 };
 
 #endif // IMAGE_PROCESSOR_HPP_

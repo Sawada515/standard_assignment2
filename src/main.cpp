@@ -33,7 +33,7 @@ int main()
     std::signal(SIGINT, signal_handler);
     LOG_I("Debug GUI Streaming Start");
 
-    /* ---------- カメラインスタンス生成 ---------- */
+    /* ---------- カメラ ---------- */
     V4L2Capture top_view_cam(
         config.camera.top_view_device,
         config.camera.width,
@@ -41,18 +41,19 @@ int main()
 
     LOG_I("Initializing Top View Camera...");
     if (!top_view_cam.initialize()) {
-        LOG_E("Failed to initialize Top View Camera (%s)", config.camera.top_view_device.c_str());
+        LOG_E("Failed to initialize Top View Camera (%s)",
+              config.camera.top_view_device.c_str());
         return -1;
     }
 
-    /* ---------- ネットワーク送信設定 ---------- */
+    /* ---------- UDP Sender ---------- */
     UDPSenderThread top_view_sender(
         config.network.dest_ip,
         config.network.top_view_port);
 
     top_view_sender.start();
 
-    /* ---------- 画像処理設定 ---------- */
+    /* ---------- Image Processor ---------- */
     ImageProcessor processor(
         MODEL_PATH,
         config.image_processor.jpeg_quality,
@@ -63,34 +64,36 @@ int main()
     while (g_signal_status == 0) {
         auto loop_start = std::chrono::steady_clock::now();
 
-        // -------------------------------------------------
-        // Top Camera Process
-        // -------------------------------------------------
+        /* ---------- Top Camera ---------- */
         {
             V4L2Capture::Frame frame;
-            // 内部で STREAMON -> 撮影 -> STREAMOFF を行う
-            // (デバイスはOpenされたままなので高速)
+
             if (top_view_cam.get_once_frame(frame)) {
 
                 ImageProcessor::GuiProcessedData gui;
                 ImageProcessor::AiProcessedData  ai;
 
                 if (processor.process_frame(
-                        frame.data.data(),
+                        frame.data,
                         frame.width,
                         frame.height,
                         gui,
                         ai))
                 {
+                    /* GUI JPEG 送信 */
                     if (gui.is_jpeg && !gui.image.empty()) {
                         top_view_sender.enqueue(
                             std::move(gui.image));
                     }
 
+                    /* AI デバッグ出力 */
                     if (!ai.image.empty()) {
-                        cv::Mat top_mat(ai.height, ai.width, CV_8UC3, ai.image.data());
+                        cv::Mat top_mat(
+                            ai.height,
+                            ai.width,
+                            CV_8UC3,
+                            ai.image.data());
 
-                        cv::imwrite("/home/shikoku-pc/img/tmp_top.jpeg", top_mat);
                     } else {
                         LOG_W("top ai image is empty");
                     }
@@ -98,6 +101,8 @@ int main()
             } else {
                 LOG_W("Failed to capture frame from Top Camera");
             }
+
+            top_view_cam.release_frame(frame);
         }
 
         std::this_thread::sleep_until(loop_start + std::chrono::milliseconds(250));
@@ -106,6 +111,5 @@ int main()
     top_view_sender.stop();
 
     LOG_I("Debug GUI Streaming Stop");
-
     return 0;
 }

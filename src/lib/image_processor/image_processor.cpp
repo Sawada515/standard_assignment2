@@ -20,25 +20,29 @@ ImageProcessor::ImageProcessor(const std::string& model_path, int jpeg_quality, 
     resize_width_(resize_width)
 {
     try {
-        // 標準出力等はLoggerに置き換えても良い
-        std::cout << "[ImageProcessor] Loading AI Model from: " << model_path << std::endl;
+        LOG_I("[ImageProcessor] Loading AI Model from: ");
         
-        // ONNXモデルの読み込み
         net_ = cv::dnn::readNetFromONNX(model_path);
         
         // ラズパイ(CPU)向けに最適化されたバックエンド設定
         net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
         net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
         
-        std::cout << "[ImageProcessor] Model loaded successfully." << std::endl;
+        LOG_I("[ImageProcessor] Model loaded successfully." );
     } catch (const cv::Exception& e) {
-        std::cerr << "[ImageProcessor] Error loading model: " << e.what() << std::endl;
-        // 必要に応じて例外を再送出するか、エラーフラグを立てる
+        LOG_E("[ImageProcessor] Error loading model: ");
+
+        exit(-1);
     }
+
+    tj_instance_ = tjInitCompress();
 }
 
 // デストラクタ
-ImageProcessor::~ImageProcessor() = default;
+ImageProcessor::~ImageProcessor()
+{
+    tjDestroy(tj_instance_);
+}
 
 
 // Public: フレーム処理メイン
@@ -109,67 +113,79 @@ void ImageProcessor::detect_resistors(const cv::Mat& input_image, std::vector<Re
     if (net_.empty()) return;
 
     // 前処理: 画像をYOLOの入力サイズにリサイズし、正規化(1/255)する
-    cv::Mat blob;
-    cv::dnn::blobFromImage(input_image, blob, 1.0/255.0, cv::Size(INPUT_SIZE, INPUT_SIZE), cv::Scalar(), true, false);
-    net_.setInput(blob);
+
+    if (blob_.empty()) {
+        blob_.create(1, 3 * INPUT_SIZE * INPUT_SIZE, CV_32F);
+    }
+
+    cv::dnn::blobFromImage(input_image, blob_, 1.0/255.0, cv::Size(INPUT_SIZE, INPUT_SIZE), cv::Scalar(), false, false);
+    net_.setInput(blob_);
 
     // 推論実行
     std::vector<cv::Mat> outputs;
     net_.forward(outputs, net_.getUnconnectedOutLayersNames());
 
-    // 後処理: YOLOv8の出力形式 [1, 5, 8400] を解析する
-    // class 0: Resistor (1クラスのみを想定)
-    cv::Mat output_data = outputs[0];
-    int dimensions = output_data.size[1]; // 5 (cx, cy, w, h, score)
-    int rows = output_data.size[2];       // 8400 (アンカー数)
+    // 後処理
+    const cv::Mat& out = outputs[0];
 
-    // OpenCVで行ごとに処理しやすいよう転置: [1, 8400, 5] に変換
-    output_data = output_data.reshape(1, dimensions);
-    cv::transpose(output_data, output_data);
-    
-    float* data = (float*)output_data.data;
+    const int rows = out.size[2];
+    const int dims = out.size[1];
 
-    // NMS用の一時リスト
-    std::vector<float> confidences;
+    const float* data = reinterpret_cast<const float*>(out.data);
+
+    // data layout
+    //data[rows * 0 + i] -> cx
+    //data[rows * 1 + i] -> cy
+    //data[rows * 2 + i] -> w
+    //data[rows * 3 + i] -> h
+    //data[rows * 4 + i] -> confidence
+
     std::vector<cv::Rect> boxes;
+    std::vector<float> confidences;
 
-    // 画像座標への変換係数
-    float x_factor = (float)input_image.cols / INPUT_SIZE;
-    float y_factor = (float)input_image.rows / INPUT_SIZE;
+    boxes.reserve(128);
+    confidences.reserve(128);
+
+    const float x_factor = static_cast<float>(input_image.cols) / INPUT_SIZE;
+    const float y_factor = static_cast<float>(input_image.rows) / INPUT_SIZE;
 
     for (int i = 0; i < rows; ++i) {
-        // index 4 がクラススコア（クラスが1つの場合）
-        float confidence = data[4];
+        float confidence = data[rows * 4 + i];
 
-        if (confidence > CONF_THRESHOLD) {
-            float cx = data[0];
-            float cy = data[1];
-            float w  = data[2];
-            float h  = data[3];
+        if (confidence < CONF_THRESHOLD)
+            continue;
 
-            // 中心座標・幅・高さ -> 左上座標・幅・高さ に変換してスケーリング
-            int left   = int((cx - 0.5 * w) * x_factor);
-            int top    = int((cy - 0.5 * h) * y_factor);
-            int width  = int(w * x_factor);
-            int height = int(h * y_factor);
+        float cx = data[rows * 0 + i];
+        float cy = data[rows * 1 + i];
+        float w  = data[rows * 2 + i];
+        float h  = data[rows * 3 + i];
 
-            boxes.push_back(cv::Rect(left, top, width, height));
-            confidences.push_back(confidence);
-        }
-        // 次のデータのポインタへ進む
-        data += dimensions;
+        int left   = static_cast<int>((cx - 0.5f * w) * x_factor);
+        int top    = static_cast<int>((cy - 0.5f * h) * y_factor);
+        int width  = static_cast<int>(w * x_factor);
+        int height = static_cast<int>(h * y_factor);
+
+        boxes.emplace_back(left, top, width, height);
+        confidences.emplace_back(confidence);
     }
 
-    // NMS (Non-Maximum Suppression): 重複する矩形を除去
-    std::vector<int> nms_result;
-    cv::dnn::NMSBoxes(boxes, confidences, CONF_THRESHOLD, NMS_THRESHOLD, nms_result);
+    /* ---------- NMS ---------- */
+    std::vector<int> indices;
+    cv::dnn::NMSBoxes(
+        boxes,
+        confidences,
+        CONF_THRESHOLD,
+        NMS_THRESHOLD,
+        indices
+    );
 
-    // NMSを通過した結果だけを出力リストに詰める
-    for (int idx : nms_result) {
+    out_resistors.reserve(indices.size());
+
+    for (int idx : indices) {
         ResistorInfo info;
         info.box = boxes[idx];
         info.confidence = confidences[idx];
-        info.resistance_value = -1.0; // 推定前は -1.0
+        info.resistance_value = -1.0;
         out_resistors.push_back(info);
     }
 }
@@ -233,15 +249,13 @@ bool ImageProcessor::bgr_to_jpeg(const cv::Mat& bgr_mat, int quality, std::vecto
     if (bgr_mat.empty()) return false;
 
     // TurboJPEG インスタンス初期化
-    tjhandle tj_instance = tjInitCompress();
-    if (!tj_instance) return false;
 
     unsigned char* outbuf = nullptr; // TurboJPEGが内部で確保するバッファ
     unsigned long outsize = 0;
 
     // 圧縮実行
     int ret = tjCompress2(
-        tj_instance,
+        tj_instance_,
         bgr_mat.data,   // 入力バッファ
         bgr_mat.cols,   // 幅
         0,              // pitch (0=自動計算)
@@ -253,9 +267,6 @@ bool ImageProcessor::bgr_to_jpeg(const cv::Mat& bgr_mat, int quality, std::vecto
         quality,        // 画質 (1-100)
         TJFLAG_FASTDCT  // 高速DCTアルゴリズム使用
     );
-
-    // インスタンス破棄
-    tjDestroy(tj_instance);
 
     if (ret != 0) {
         // 圧縮失敗時、確保されたバッファがあれば解放
