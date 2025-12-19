@@ -118,7 +118,16 @@ void ImageProcessor::detect_resistors(const cv::Mat& input_image, std::vector<Re
         blob_.create(1, 3 * INPUT_SIZE * INPUT_SIZE, CV_32F);
     }
 
-    cv::dnn::blobFromImage(input_image, blob_, 1.0/255.0, cv::Size(INPUT_SIZE, INPUT_SIZE), cv::Scalar(), false, false);
+    if (input_image.empty()) {
+        LOG_E("input image is empty");
+
+        return;
+    }
+
+    LOG_I("DNN input : %dx%d ch = %d", input_image.cols, input_image.rows, \
+                                        input_image.channels());
+
+    cv::dnn::blobFromImage(input_image, blob_, 1.0/255.0, cv::Size(INPUT_SIZE, INPUT_SIZE), cv::Scalar(), true, false);
     net_.setInput(blob_);
 
     // 推論実行

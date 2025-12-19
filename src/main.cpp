@@ -62,7 +62,7 @@ int main()
     LOG_I("Streaming Loop Start");
 
     while (g_signal_status == 0) {
-        auto loop_start = std::chrono::steady_clock::now();
+        //auto loop_start = std::chrono::steady_clock::now();
 
         /* ---------- Top Camera ---------- */
         {
@@ -91,7 +91,7 @@ int main()
                         cv::Mat top_mat(
                             ai.height,
                             ai.width,
-                            CV_8UC3,
+                            CV_8UC3,    //uint8_t 3ch
                             ai.image.data());
 
                     } else {
@@ -105,7 +105,7 @@ int main()
             top_view_cam.release_frame(frame);
         }
 
-        std::this_thread::sleep_until(loop_start + std::chrono::milliseconds(250));
+        //std::this_thread::sleep_until(loop_start + std::chrono::milliseconds(250));
     }
 
     top_view_sender.stop();
