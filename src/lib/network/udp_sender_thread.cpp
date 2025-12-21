@@ -9,7 +9,7 @@
 #include "network/udp_sender_thread.hpp"
 #include "logger/logger.hpp"
 
-#define MAX_QUEUE_SiZE 10  /**< 送信キューの最大サイズ */
+#define MAX_QUEUE_SiZE 1  /**< 送信キューの最大サイズ */
 
 UDPSenderThread::UDPSenderThread(const std::string& ip, uint16_t port)
     : sender_(ip, port),
@@ -75,8 +75,8 @@ void UDPSenderThread::enqueue(std::vector<uint8_t>&& data)
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        /* キュー溢れ防止（最新優先） */
-        if (send_queue_.size() >= MAX_QUEUE_SiZE) {
+        // 常に最新のフレームを送るために捨てる
+        while (!send_queue_.empty()) {
             send_queue_.pop();
         }
 

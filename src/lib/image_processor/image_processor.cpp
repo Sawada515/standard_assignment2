@@ -47,15 +47,13 @@ ImageProcessor::~ImageProcessor()
     tjDestroy(tj_instance_);
 }
 
-
-// Public: フレーム処理メイン
 bool ImageProcessor::process_frame(const uint8_t* yuyv,
                                    uint32_t width,
                                    uint32_t height,
                                    GuiProcessedData& gui_data,
-                                   AiProcessedData& ai_data)
+                                   AiProcessedData& ai_data,
+                                   bool is_run_ai)
 {
-    // 入力チェック
     if (!yuyv || width == 0 || height == 0) {
         return false;
     }
@@ -64,7 +62,6 @@ bool ImageProcessor::process_frame(const uint8_t* yuyv,
     // YUYVデータ(2ch)としてMatを作成（コピーなし）
     cv::Mat src_mat(height, width, CV_8UC2, (void*)yuyv);
     
-    // 出力バッファのサイズ確保とMatラップ
     size_t bgr_size = width * height * 3;
     if (ai_data.image.size() != bgr_size) {
         ai_data.image.resize(bgr_size);
@@ -80,14 +77,14 @@ bool ImageProcessor::process_frame(const uint8_t* yuyv,
     ai_data.height = height;
     ai_data.channels = 3;
 
-    /* ---------- 2. 抵抗検出 (YOLO) ---------- */
-    // 結果は ai_data.resistors に格納される
-    detect_resistors(dst_mat, ai_data.resistors);
-
-    /* ---------- 3. 抵抗値推定 & 結果格納 ---------- */
-    for (auto& resistor : ai_data.resistors) {
-        // 画像処理でカラーコードを読む（現在はダミー実装）
-        resistor.resistance_value = estimate_resistance_value(dst_mat, resistor.box);
+    if (is_run_ai) {
+	    /* ---------- 2. 抵抗検出 (YOLO) ---------- */
+	    detect_resistors(dst_mat, ai_data.resistors);
+	
+	    /* ---------- 3. 抵抗値推定 & 結果格納 ---------- */
+	    for (auto& resistor : ai_data.resistors) {
+	        resistor.resistance_value = estimate_resistance_value(dst_mat, resistor.box);
+	    }
     }
 
     /* ---------- 4. GUI用に結果を描画 ---------- */

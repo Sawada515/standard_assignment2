@@ -64,6 +64,7 @@ bool UDPSender::send(const void* data, size_t size)
 {
     if (!is_valid_ || sock_fd_ < 0) {
         LOG_E("Socket is not valid");
+
         return false;
     }
 
@@ -72,21 +73,18 @@ bool UDPSender::send(const void* data, size_t size)
 
     const size_t MAX_CHUNK_SIZE = 1400;
 
+    int packet_count = 0;
+
     while (offset < size) {
-        // 今回送るデータサイズ
         size_t chunk_size = std::min(MAX_CHUNK_SIZE, size - offset);
-        
-        // 終了フラグ (0: 続きあり, 1: これで最後)
+
         uint8_t flag = (offset + chunk_size == size) ? 1 : 0;
 
-        // --- ここが Zero-copy の肝 (iovec) ---
         struct iovec iov[2];
-        
-        // 1つ目のデータ: ヘッダー (1byte)
+
         iov[0].iov_base = &flag;
         iov[0].iov_len = 1;
 
-        // 2つ目のデータ: 画像データのポインタ (コピーせず参照するだけ)
         iov[1].iov_base = const_cast<uint8_t*>(ptr + offset);
         iov[1].iov_len = chunk_size;
 
@@ -98,18 +96,41 @@ bool UDPSender::send(const void* data, size_t size)
         msg.msg_iov = iov;                 // データの配列
         msg.msg_iovlen = 2;                // 配列の長さ (ヘッダー + 本体)
 
-        // 送信実行 (カーネル内で結合される)
-        ssize_t sent_bytes = sendmsg(sock_fd_, &msg, 0);
+        ssize_t send_bytes;
+        int retry_count = 0;
+        const int MAX_RETRIES = 5;
 
-        if (sent_bytes < 0) {
-            LOG_E("UDP sendmsg failed: %s", std::strerror(errno));
+        do {
+            send_bytes = sendmsg(sock_fd_, &msg, 0); //送信実行 カーネル側
 
-            return false;
-        }
+            if (send_bytes >= 0) {
+                break;
+            }
+
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS) {
+                retry_count += 1;
+
+                if (retry_count >= MAX_RETRIES) {
+                    LOG_E("UDP send buffer full, dropped packet.");
+
+                    return false;   // ここで終わるとGUI側で線が入ったりする
+                }
+
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+            } else {
+                LOG_E("UDP sendmsg fatal error : %s", std::strerror(errno));
+
+                return false;
+            }
+        } while (retry_count <= MAX_RETRIES);
 
         offset += chunk_size;
 
-        std::this_thread::sleep_for(std::chrono::microseconds(300));
+        packet_count += 1;
+
+        if (packet_count % 10 == 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
     }
 
     return true;

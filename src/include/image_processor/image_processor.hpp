@@ -84,6 +84,7 @@ public:
      * @param[in]  height    画像の高さ
      * @param[out] gui_data  GUI送信用の処理結果格納先
      * @param[out] ai_data   AI解析結果の格納先
+     * @param[in]  is_run_ai
      * @return true  処理成功
      * @return false 入力不正、または圧縮失敗等
      */
@@ -91,7 +92,8 @@ public:
                        uint32_t width,
                        uint32_t height,
                        GuiProcessedData& gui_data,
-                       AiProcessedData& ai_data);
+                       AiProcessedData& ai_data,
+                       bool is_run_ai);
 
 private:
     /**

@@ -53,11 +53,21 @@ int main()
 
     top_view_sender.start();
 
+    setenv("ONP_NU_THREADS", "2", 1);
+    setenv("OPENCV_NUM_THREADS", "w", 1);
+
     /* ---------- Image Processor ---------- */
     ImageProcessor processor(
         MODEL_PATH,
         config.image_processor.jpeg_quality,
         config.image_processor.resize_width);
+    
+    ImageProcessor::GuiProcessedData gui;
+    ImageProcessor::AiProcessedData ai;
+
+    // 推論の回数を減らすため
+    uint64_t frame_count = 0;
+    const int INFERENCE_INTERVAL = 4;   //4回に一回推論
 
     LOG_I("Streaming Loop Start");
 
@@ -69,33 +79,22 @@ int main()
             V4L2Capture::Frame frame;
 
             if (top_view_cam.get_once_frame(frame)) {
+                frame_count += 1;
 
-                ImageProcessor::GuiProcessedData gui;
-                ImageProcessor::AiProcessedData  ai;
+                bool is_run_ai = (frame_count % INFERENCE_INTERVAL) ? false : true;
 
                 if (processor.process_frame(
                         frame.data,
                         frame.width,
                         frame.height,
                         gui,
-                        ai))
+                        ai,
+                        is_run_ai))
                 {
                     /* GUI JPEG 送信 */
                     if (gui.is_jpeg && !gui.image.empty()) {
                         top_view_sender.enqueue(
                             std::move(gui.image));
-                    }
-
-                    /* AI デバッグ出力 */
-                    if (!ai.image.empty()) {
-                        cv::Mat top_mat(
-                            ai.height,
-                            ai.width,
-                            CV_8UC3,    //uint8_t 3ch
-                            ai.image.data());
-
-                    } else {
-                        LOG_W("top ai image is empty");
                     }
                 }
             } else {
@@ -111,5 +110,6 @@ int main()
     top_view_sender.stop();
 
     LOG_I("Debug GUI Streaming Stop");
+
     return 0;
 }

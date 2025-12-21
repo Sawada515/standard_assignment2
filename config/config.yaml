@@ -1,11 +1,11 @@
 network:
-  dest_ip: "192.168.76.211"
+  dest_ip: "192.168.10.100"
   top_view_port : 50000
   bottom_view_port : 50001
 
 camera:
-  top_view_device: "/dev/video0"
-  bottom_view_device: "/dev/video2"
+  top_view_device: "/dev/video2"
+  bottom_view_device: "/dev/video0"
   width: 1280
   height: 960
 
