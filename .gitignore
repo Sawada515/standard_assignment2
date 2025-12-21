@@ -45,4 +45,6 @@ ojb/
 bin/
 build/
 docs/
+train_data/
 todo.txt
+

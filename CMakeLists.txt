@@ -31,8 +31,8 @@ set(SOURCES
 
 add_executable(webcam_app ${SOURCES})
 
-target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3 -march=native -march=armv8-a)
-#target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -ggdb3 -O0)
+#target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3 -march=native -march=armv8-a)
+target_compile_options(webcam_app PRIVATE -Wall -Wextra -Wpedantic -O3)
 
 target_link_libraries(
     webcam_app PRIVATE
