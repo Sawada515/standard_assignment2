@@ -100,7 +100,6 @@ bool V4L2Capture::initialize()
             return false;
         }
 
-        // ★ QBUF はここで1回だけ
         if (xioctl(device_fd_, VIDIOC_QBUF, &buf) < 0) {
             LOG_E("VIDIOC_QBUF(init) failed: %s", strerror(errno));
 
