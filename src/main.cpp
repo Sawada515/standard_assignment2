@@ -21,7 +21,6 @@ void signal_handler(int signal)
 
 int main()
 {
-    /* ---------- 設定読み込み ---------- */
     ReadYaml config_reader;
     if (!config_reader.load_config("../config/config.yaml")) {
         LOG_E("Failed to load configuration file.");
@@ -33,7 +32,6 @@ int main()
     std::signal(SIGINT, signal_handler);
     LOG_I("Debug GUI Streaming Start");
 
-    /* ---------- カメラ ---------- */
     V4L2Capture top_view_cam(
         config.camera.top_view_device,
         config.camera.width,
@@ -46,17 +44,15 @@ int main()
         return -1;
     }
 
-    /* ---------- UDP Sender ---------- */
     UDPSenderThread top_view_sender(
         config.network.dest_ip,
         config.network.top_view_port);
 
     top_view_sender.start();
 
-    setenv("ONP_NU_THREADS", "2", 1);
+    setenv("ONP_NUM_THREADS", "2", 1);
     setenv("OPENCV_NUM_THREADS", "w", 1);
 
-    /* ---------- Image Processor ---------- */
     ImageProcessor processor(
         MODEL_PATH,
         config.image_processor.jpeg_quality,
@@ -65,7 +61,6 @@ int main()
     ImageProcessor::GuiProcessedData gui;
     ImageProcessor::AiProcessedData ai;
 
-    // 推論の回数を減らすため
     uint64_t frame_count = 0;
     const int INFERENCE_INTERVAL = 4;   //4回に一回推論
 
@@ -74,7 +69,6 @@ int main()
     while (g_signal_status == 0) {
         //auto loop_start = std::chrono::steady_clock::now();
 
-        /* ---------- Top Camera ---------- */
         {
             V4L2Capture::Frame frame;
 
@@ -91,7 +85,6 @@ int main()
                         ai,
                         is_run_ai))
                 {
-                    /* GUI JPEG 送信 */
                     if (gui.is_jpeg && !gui.image.empty()) {
                         top_view_sender.enqueue(
                             std::move(gui.image));
